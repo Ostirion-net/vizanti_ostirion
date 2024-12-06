@@ -36,11 +36,23 @@ const opacityValue = document.getElementById('{uniqueID}_opacity_value');
 const smoothingCheckbox = document.getElementById('{uniqueID}_smoothing');
 const ignoreRotationCheckbox = document.getElementById('{uniqueID}_ignore_rotation');
 
+const text_lat = document.getElementById("{uniqueID}_latitude");
+const text_lon = document.getElementById("{uniqueID}_longitude");
+const text_alt = document.getElementById("{uniqueID}_altitude");
+const text_cov = document.getElementById("{uniqueID}_covariance");
+
 const placeholder = new Image();
 placeholder.src = "assets/tile_loading.png";
 
+function setOpacityText(val){
+	if(val == 0.0)
+		opacityValue.textContent = "0.0 (Tile rendering disabled)";
+	else
+		opacityValue.textContent = val;
+}
+
 opacitySlider.addEventListener('input', function () {
-	opacityValue.textContent = this.value;
+	setOpacityText(this.value);
 	saveSettings();
 });
 
@@ -76,7 +88,7 @@ if(settings.hasOwnProperty("{uniqueID}")){
 	ignoreRotationCheckbox.checked = loaded_data.ignore_rotation ?? false;
 
 	opacitySlider.value = loaded_data.opacity;
-	opacityValue.innerText = loaded_data.opacity;
+	setOpacityText(loaded_data.opacity);
 }else{
 	saveSettings();
 }
@@ -138,12 +150,9 @@ function drawTile(screenSize, i, j, tempMeterSize, tempZoomLevel, maxtile){
 
 	const yaw = transformed.rotation.toEuler().h;
 
-	ctx.save();
-	ctx.translate(pos.x, pos.y);
-	ctx.scale(1.0, 1.0);
+	ctx.setTransform(1, 0, 0, 1, pos.x, pos.y);
 	ctx.rotate(-yaw);
 	ctx.drawImage(tileImage, 0, 0, screenSize, screenSize);
-	ctx.restore();
 }
 
 function clamp(val, from, to){
@@ -164,7 +173,7 @@ async function drawTiles(){
 	ctx.globalAlpha = opacitySlider.value;
 	ctx.imageSmoothingEnabled = smoothingCheckbox.checked;
 
-	if(!map_fix){
+	if(!map_fix || opacitySlider.value == 0.0){
 		return;
 	}
 
@@ -251,6 +260,9 @@ async function drawTiles(){
 			y += dy;
 		}
 
+		//transform reset
+		ctx.setTransform(1, 0, 0, 1, 0, 0);
+
 		ctx.globalAlpha = 0.6;
 		ctx.fillStyle = "#171717";
 		ctx.fillRect(0, hei-20, 120, 20);
@@ -264,6 +276,13 @@ async function drawTiles(){
 	}else{
 		status.setError("Required transform frame \""+map_fix.header.frame_id+"\" not found.");
 	}
+}
+
+const COVARIANCE_TYPE = {
+	0: "(unknown)",
+	1: "(approximated)",
+	2: "(diagonal known)",
+	3: "(known)"
 }
 
 //Topic
@@ -285,11 +304,29 @@ function connect(){
 	});
 
 	status.setWarn("No data received.");
+	text_lat.innerText = "Latitude: ?";
+	text_lon.innerText = "Longitude: ?";
+	text_alt.innerText = "Altitude: ?";
+	text_cov.innerText = "Ground Covariance: ?";
 	
 	listener = map_topic.subscribe((msg) => {
-		
-		if(isNaN(msg.longitude) || isNaN(msg.latitude)){
-			status.setError("Invalid fix.");
+
+		const cov_mat = msg.position_covariance;
+		const covariance_meters = Math.hypot(Math.sqrt(cov_mat[0]), Math.sqrt(cov_mat[4]))
+
+		if(msg.latitude != null)
+			text_lat.innerText = "Latitude: " + msg.latitude.toFixed(8)+"°";
+
+		if(msg.longitude != null)
+			text_lon.innerText = "Longitude: " + msg.longitude.toFixed(8)+"°";
+
+		if(msg.altitude != null)
+			text_alt.innerText = "Altitude: " + msg.altitude.toFixed(2)+" m";
+
+		text_cov.innerText = "Ground Covariance: " + covariance_meters.toFixed(2)+ " m " + COVARIANCE_TYPE[msg.position_covariance_type];
+
+		if(msg.status.status == -1 || isNaN(msg.longitude) || isNaN(msg.latitude)){
+			status.setWarn("No fix.");
 			return;
 		}
 

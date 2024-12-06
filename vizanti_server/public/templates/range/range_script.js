@@ -27,6 +27,12 @@ const icon = document.getElementById("{uniqueID}_icon").getElementsByTagName('im
 const opacitySlider = document.getElementById('{uniqueID}_opacity');
 const opacityValue = document.getElementById('{uniqueID}_opacity_value');
 
+const text_range = document.getElementById("{uniqueID}_rangetext");
+const text_min = document.getElementById("{uniqueID}_rangemintext");
+const text_max = document.getElementById("{uniqueID}_rangemaxtext");
+const text_fov = document.getElementById("{uniqueID}_fovtext");
+const text_type = document.getElementById("{uniqueID}_typetext");
+
 opacitySlider.addEventListener('input', () =>  {
 	opacityValue.textContent = opacitySlider.value;
 	saveSettings();
@@ -65,13 +71,12 @@ const ctx = canvas.getContext('2d', { colorSpace: 'srgb' });
 async function drawRanges() {
 
 	function drawCircle(min_size, max_size) {
-		ctx.save();
         ctx.beginPath();
         ctx.arc(0, 0, (min_size+max_size)/2, 0, 2 * Math.PI);
         ctx.closePath();
 		ctx.lineWidth = max_size - min_size;
         ctx.stroke();
-		ctx.restore();
+		ctx.lineWidth = 1;
 	  }
 
 	function drawPizza(start_angle, end_angle, min_len, max_len){
@@ -89,6 +94,7 @@ async function drawRanges() {
 	const wid = canvas.width;
 	const hei = canvas.height;
 
+	ctx.setTransform(1,0,0,1,0,0);
 	ctx.clearRect(0, 0, wid, hei);
 	ctx.globalAlpha = opacitySlider.value;
 
@@ -111,9 +117,7 @@ async function drawRanges() {
 		const start_angle = -sample.field_of_view/2;
 		const end_angle = sample.field_of_view/2;
 
-		ctx.save();
-		ctx.translate(pos.x, pos.y);
-		ctx.scale(1.0, -1.0);
+		ctx.setTransform(1,0,0,-1,pos.x, pos.y); //sx,0,0,sy,px,py
 		ctx.rotate(sample.yaw);
 
 		if(sample.cone_half_width < sample.max_range)
@@ -148,10 +152,6 @@ async function drawRanges() {
 
 		}
 
-
-
-		ctx.restore();
-
 		yieldToMainThread();
 
 	}
@@ -169,6 +169,11 @@ window.addEventListener('resize', resizeScreen);
 window.addEventListener('orientationchange', resizeScreen);
 
 //Topic
+
+const RADIATION_TYPE = {
+	0: "Ultrasound",
+	1: "Infrared"
+}
 
 function connect(){
 
@@ -189,6 +194,11 @@ function connect(){
 	});
 
 	status.setWarn("No data received.");
+	text_range.innerText = "Range: ?";
+	text_min.innerText = "Min: ?";
+	text_max.innerText = "Max: ?";
+	text_fov.innerText = "Field of view: ?";
+	text_type.innerText = "Type: ?";
 	
 	listener = range_topic.subscribe((msg) => {
 
@@ -205,6 +215,12 @@ function connect(){
 			status.setError("Required transform frame \""+msg.header.frame_id+"\" not found.");
 			return;
 		}
+
+		text_range.innerText = "Range: "+msg.range.toFixed(3)+" m";
+		text_min.innerText = "Min: "+msg.min_range.toFixed(3)+" m";
+		text_max.innerText = "Max: "+msg.max_range.toFixed(3)+" m";
+		text_fov.innerText = "Field of view: "+(msg.field_of_view * (180/Math.PI)).toFixed(2)+"°";
+		text_type.innerText = "Type: "+RADIATION_TYPE[msg.radiation_type];
 
 		const front_vector = tfModule.applyRotation(
 			{
