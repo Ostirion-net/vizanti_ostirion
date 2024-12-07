@@ -25,12 +25,14 @@ find_package(visualization_msgs REQUIRED)
 
 install(DIRECTORY
   launch
+  assets
   DESTINATION share/${PROJECT_NAME}/
 )
 
 install(PROGRAMS
   scripts/particle_cloud_to_pose_array.py
   scripts/path_to_nav2poses.py
+  scripts/test_occupancy_grid.py
   scripts/test_grid_cells.py
   scripts/test_marker_array.py
   scripts/test_tf.py
