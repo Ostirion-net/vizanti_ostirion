@@ -207,6 +207,7 @@ async function drawMap(){
 	if(!map_data)
 		return;
 
+	ctx.setTransform(1,0,0,1,0,0);
 	ctx.clearRect(0, 0, canvas.width, canvas.height);
 	ctx.imageSmoothingEnabled = false;
 
@@ -237,15 +238,12 @@ async function drawMap(){
 		y: tf_pose.translation.y,
 	});
 
-	const yaw = tf_pose.rotation.toEuler().h;
+	const matrix = view.quaterionToProjectionMatrix(tf_pose.rotation);
 
-	ctx.save();
 	ctx.globalAlpha = opacitySlider.value;
-	ctx.translate(pos.x, pos.y);
+	ctx.setTransform(matrix[0], matrix[1], matrix[2], matrix[3], pos.x, pos.y); //sx,0,0,sy,px,py
 	ctx.scale(1.0, -1.0);
-	ctx.rotate(yaw);
 	ctx.drawImage(temp_canvas, 0, 0, map_width, map_height);
-	ctx.restore();
 }
 
 //Topic
