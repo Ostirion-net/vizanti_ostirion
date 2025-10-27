@@ -356,6 +356,12 @@ object {
 	height: 60px;
 	z-index: 12; 
 }
+
+.navball_canvas {
+	pointer-events: none;
+	z-index: 12; 
+	transform: translate(-50%, -50%);
+}
   
 
 /*Add widget cards*/
@@ -434,6 +440,12 @@ object {
     margin-top: 5px;
     margin-bottom: 5px;
 }
+
+
+.live_data_indented {
+	margin-left: 1.5em;
+}
+
 
 /* Input box */
 
