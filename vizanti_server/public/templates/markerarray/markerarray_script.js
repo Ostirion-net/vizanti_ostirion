@@ -20,6 +20,7 @@ let listener = undefined;
 let marker_topic = undefined;
 
 let markers = {};
+let z_sorted_keys = [];
 
 const selectionbox = document.getElementById("{uniqueID}_topic");
 const icon = document.getElementById("{uniqueID}_icon").getElementsByTagName('img')[0];
@@ -50,6 +51,8 @@ function saveSettings(){
 	}
 	settings.save();
 }
+
+
 
 //Rendering
 
@@ -182,7 +185,7 @@ async function drawMarkers(){
 
 	function drawLine(marker, size){
 
-		if(marker.colors.length == 0)
+		if(!marker.hasOwnProperty("colors") || marker.colors.length == 0)
 			ctx.strokeStyle = rgbaToFillColor(marker.color);
 		else
 			ctx.strokeStyle = rgbaToFillColor(marker.colors[0]); // for now
@@ -201,6 +204,55 @@ async function drawMarkers(){
 		});
 
 		ctx.stroke();
+	}
+
+	function drawLineList(marker, size){
+		ctx.lineWidth = parseInt(marker.scale.x*size);
+
+		// Draw lines between pairs of points: 0-1, 2-3, 4-5, etc.
+		for(let i = 0; i < marker.points.length - 1; i += 2){
+			const point1 = marker.points[i];
+			const point2 = marker.points[i + 1];
+			
+			// Set color for this line segment
+			if(!marker.hasOwnProperty("colors") || marker.colors.length === 0){
+				ctx.strokeStyle = rgbaToFillColor(marker.color);
+			} else if(marker.colors.length > i){
+				// Create gradient from start to end point for per-vertex color
+				const x1 = point1.x * size;
+				const y1 = -point1.y * size;
+				const x2 = point2.x * size;
+				const y2 = -point2.y * size;
+				
+				const gradient = ctx.createLinearGradient(x1, y1, x2, y2);
+				gradient.addColorStop(0, rgbaToFillColor(marker.colors[i]));
+				gradient.addColorStop(1, rgbaToFillColor(marker.colors[i + 1] || marker.colors[i]));
+				ctx.strokeStyle = gradient;
+			}
+
+			ctx.beginPath();
+			ctx.moveTo(point1.x * size, -point1.y * size);
+			ctx.lineTo(point2.x * size, -point2.y * size);
+			ctx.stroke();
+		}
+	}
+
+	function drawSphereList(marker, size) {
+		const radius = (size * marker.scale.x) / 2; // Use scale.x for sphere diameter
+		
+		marker.points.forEach((point, index) => {
+			// Set color for this sphere
+			if (marker.hasOwnProperty("colors") && marker.colors.length > index) {
+				ctx.fillStyle = rgbaToFillColor(marker.colors[index]);
+			} else {
+				ctx.fillStyle = rgbaToFillColor(marker.color);
+			}
+			
+			// Draw the circle at the point position
+			ctx.beginPath();
+			ctx.arc(point.x * size, -point.y * size, radius, 0, 2 * Math.PI, false);
+			ctx.fill();
+		});
 	}
 
 	function drawText(marker, size) {
@@ -250,7 +302,9 @@ async function drawMarkers(){
 
 	let current_time = new Date();
 
-	for (const [key, marker] of Object.entries(markers)) {
+	for (const key of z_sorted_keys) {
+		const marker = markers[key];
+		
 		ctx.fillStyle = rgbaToFillColor(marker.color);
 
 		const frame = tf.absoluteTransforms[marker.header.frame_id];
@@ -259,7 +313,7 @@ async function drawMarkers(){
 			continue;
 
 		//skip old markers
-		if((current_time - marker.stamp)/1000.0 > marker.lifetime.sec + marker.lifetime.nanosec*1e-9)
+		if((current_time - marker.stamp) / 1000.0 > marker.lifetime.sec + marker.lifetime.nanosec*1e-9)
 			continue;
 
 		const pos = view.fixedToScreen({
@@ -277,9 +331,9 @@ async function drawMarkers(){
 			case 2: 
 			case 3: drawCircle(marker, unit); break; //SPHERE=2 CYLINDER=3
 			case 4: drawLine(marker, unit); break; //LINE_STRIP=4
-			case 5: status.setWarn("LINE_LIST markers are not supported yet."); break; //LINE_LIST=5
+			case 5: drawLineList(marker, unit); break; //LINE_LIST=5
 			case 6:	drawCubeList(marker, unit); break; //CUBE_LIST=6
-			case 7: status.setWarn("SPHERE_LIST markers are not supported yet."); break; //SPHERE_LIST=7
+			case 7: drawSphereList(marker, unit); break; //SPHERE_LIST=7
 			case 8: status.setWarn("POINTS markers are not supported yet."); break; //POINTS=8
 			case 9: drawText(marker, unit); break;//TEXT_VIEW_FACING=9
 			case 10: status.setWarn("MESH_RESOURCE markers are not supported yet."); break; //MESH_RESOURCE=10
@@ -316,6 +370,7 @@ function connect(){
 		msg.markers.forEach(m => {
 			if(m.action == 3){
 				markers = {};
+				z_sorted_keys = [];
 				return;
 			}
 			const id = m.ns + m.id;
@@ -346,6 +401,12 @@ function connect(){
 
 			m.stamp = new Date();	
 			markers[id] = m;
+		});
+
+		z_sorted_keys = Object.keys(markers).sort((a, b) => {
+			const markerA = markers[a];
+			const markerB = markers[b];
+			return markerA.transformed.translation.z - markerB.transformed.translation.z;
 		});
 
 		if(!error){
@@ -383,6 +444,7 @@ async function loadTopics(){
 selectionbox.addEventListener("change", (event) => {
 	topic = selectionbox.value;
 	markers = {};
+	z_sorted_keys = [];
 	connect();
 });
 
@@ -410,4 +472,3 @@ window.addEventListener('orientationchange', resizeScreen);
 resizeScreen();
 
 console.log("MarkerArray Widget Loaded {uniqueID}")
-
