@@ -149,6 +149,9 @@ async function drawMarkers(){
 	}
 
 	function drawCubeList(marker, size) {
+		if (!marker.points || marker.points.length === 0)
+			return;
+
 		ctx.scale(marker.scale.x, marker.scale.y);
 
 		const sizeHalf = size / 2;
@@ -211,6 +214,8 @@ async function drawMarkers(){
 	}
 
 	function drawLine(marker, size){
+		if (!marker.points || marker.points.length === 0)
+			return;
 
 		if(!marker.hasOwnProperty("colors") || marker.colors.length == 0)
 			ctx.strokeStyle = rgbaToFillColor(marker.color);
@@ -234,6 +239,9 @@ async function drawMarkers(){
 	}
 
 	function drawLineList(marker, size){
+		if (!marker.points || marker.points.length === 0)
+			return;
+
 		ctx.lineWidth = parseInt(marker.scale.x*size);
 
 		// Draw lines between pairs of points: 0-1, 2-3, 4-5, etc.
@@ -265,6 +273,9 @@ async function drawMarkers(){
 	}
 
 	function drawSphereList(marker, size) {
+		if (!marker.points || marker.points.length === 0)
+			return;
+
 		const radius = (size * marker.scale.x) / 2; // Use scale.x for sphere diameter
 		
 		marker.points.forEach((point, index) => {
@@ -319,7 +330,8 @@ async function drawMarkers(){
 
 	function drawTriangleList(marker, size) {
 		const tris = marker.triangles;
-		if (!tris || tris.length === 0) return;
+		if (!tris || tris.length === 0)
+			return;
 
 		// Fast path: single color
 		if (marker.trianglesUniformColor) {
