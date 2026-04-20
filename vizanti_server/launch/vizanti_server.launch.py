@@ -1,13 +1,5 @@
-import os
 import launch
 import launch_ros.actions
-
-ROS_DISTRO = os.environ["ROS_DISTRO"]
-
-def distro_int_float(value):
-    if ROS_DISTRO == "jazzy":
-        return str(int(value))
-    return str(float(value))
 
 def generate_launch_description():
 
@@ -26,8 +18,8 @@ def generate_launch_description():
     fragment_timeout = launch.substitutions.LaunchConfiguration('fragment_timeout', default='30')
     delay_between_messages = launch.substitutions.LaunchConfiguration('delay_between_messages', default='0.0')
     max_message_size = launch.substitutions.LaunchConfiguration('max_message_size', default='999999999')
-    websocket_ping_interval = launch.substitutions.LaunchConfiguration('websocket_ping_interval', default=distro_int_float(4.0))
-    websocket_ping_timeout = launch.substitutions.LaunchConfiguration('websocket_ping_timeout', default=distro_int_float(15.0))
+    websocket_ping_interval = launch.substitutions.LaunchConfiguration('websocket_ping_interval', default='4.0')
+    websocket_ping_timeout = launch.substitutions.LaunchConfiguration('websocket_ping_timeout', default='15.0')
 
     rosbridge_node = launch_ros.actions.Node(
         name='vizanti_rosbridge',
