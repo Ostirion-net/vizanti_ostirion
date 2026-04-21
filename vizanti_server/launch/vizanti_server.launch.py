@@ -7,6 +7,7 @@ def generate_launch_description():
     base_url = launch.substitutions.LaunchConfiguration('base_url', default='') #e.g. /vizanti
     port = launch.substitutions.LaunchConfiguration('port', default=5000)
     port_rosbridge = launch.substitutions.LaunchConfiguration('port_rosbridge', default=5001)
+    client_port_rosbridge = launch.substitutions.LaunchConfiguration('client_port_rosbridge', default=443)
     flask_debug = launch.substitutions.LaunchConfiguration('flask_debug', default=True)
     default_widget_config = launch.substitutions.LaunchConfiguration('default_widget_config', default='') #e.g. ~/your_custom_config.json
 
@@ -57,7 +58,7 @@ def generate_launch_description():
         parameters=[
             {'host': '0.0.0.0'},
             {'port': port},
-            {'port_rosbridge': port_rosbridge},
+            {'port_rosbridge': client_port_rosbridge},
             {'flask_debug': flask_debug},
             {'base_url': base_url},
             {'compression': "none"},
