@@ -20,9 +20,10 @@ class Rosbridge {
 	connect(){
 		this.connected = false;
 
-		this.ros = new ROSLIB.Ros({
-			url: 'ws://' + this.url + ':' + this.port
-		});
+		let protocol = (window.location.protocol === "https:") ? "wss://" : "ws://";
+this.ros = new ROSLIB.Ros({
+    url: protocol + this.url + ':' + this.port
+});
 
 		this.ros.on('connection', () => {
 			console.log('Connected to robot.');
