@@ -1,7 +1,11 @@
+import os
 import launch
 import launch_ros.actions
 
 def generate_launch_description():
+    # Catch the environment variable we inject via Docker in the portal
+    # Defaults to an empty string if not set, preserving local usage
+    fleet_ns = os.environ.get('ROS_NAMESPACE', '')
 
     #general params
     base_url = launch.substitutions.LaunchConfiguration('base_url', default='') #e.g. /vizanti
@@ -23,6 +27,7 @@ def generate_launch_description():
     websocket_ping_timeout = launch.substitutions.LaunchConfiguration('websocket_ping_timeout', default='15.0')
 
     rosbridge_node = launch_ros.actions.Node(
+        namespace=fleet_ns,
         name='vizanti_rosbridge',
         package='rosbridge_server',
         executable='rosbridge_websocket',
@@ -45,12 +50,14 @@ def generate_launch_description():
     )
 
     rosapi_node = launch_ros.actions.Node(
+        namespace=fleet_ns,
         name='rosapi',
         package='rosapi',
         executable='rosapi_node'
     )
 
     flask_node = launch_ros.actions.Node(
+        namespace=fleet_ns,
         name='vizanti_flask_node',
         package='vizanti_server',
         executable='server.py',
@@ -67,6 +74,7 @@ def generate_launch_description():
     )
 
     tf_handler_node = launch_ros.actions.Node(
+        namespace=fleet_ns,
         name='vizanti_tf_handler_node',
         package='vizanti_cpp',
         executable='tf_consolidator',
@@ -74,6 +82,7 @@ def generate_launch_description():
     )
 
     service_handler_node = launch_ros.actions.Node(
+        namespace=fleet_ns,
         name='vizanti_service_handler_node',
         package='vizanti_server',
         executable='service_handler.py',
