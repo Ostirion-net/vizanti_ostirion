@@ -58,37 +58,37 @@ this.ros = new ROSLIB.Ros({
 
 		this.topics_client = new ROSLIB.Service({
 			ros : this.ros,
-			name : '/rosapi/topics',
+			name : 'rosapi/topics',
 			serviceType : 'rosapi_msgs/srv/Topics',
 		});
 
 		this.nodes_client = new ROSLIB.Service({
 			ros : this.ros,
-			name : '/rosapi/nodes',
+			name : 'rosapi/nodes',
 			serviceType : 'rosapi_msgs/srv/Nodes',
 		});
 
 		this.publishers_client = new ROSLIB.Service({
 			ros : this.ros,
-			name : '/rosapi/publishers',
+			name : 'rosapi/publishers',
 			serviceType : 'rosapi/Publishers',
 		});
 
 		this.subscribers_client = new ROSLIB.Service({
 			ros : this.ros,
-			name : '/rosapi/subscribers',
+			name : 'rosapi/subscribers',
 			serviceType : 'rosapi/Subscribers',
 		});
 
 		this.services_client = new ROSLIB.Service({
 			ros : this.ros,
-			name : '/rosapi/services',
+			name : 'rosapi/services',
 			serviceType : 'rosapi/Services',
 		});
 		
 		this.services_for_type_client = new ROSLIB.Service({
 			ros : this.ros,
-			name : '/rosapi/services_for_type',
+			name : 'rosapi/services_for_type',
 			serviceType : 'rosapi/ServicesForType',
 		});
 
