@@ -21,20 +21,25 @@ class Rosbridge {
 		this.connected = false;
 
 		let protocol = (window.location.protocol === "https:") ? "wss://" : "ws://";
-this.ros = new ROSLIB.Ros({
-    url: protocol + this.url + ':' + this.port
-});
+		this.ros = new ROSLIB.Ros({
+			url: protocol + this.url + ':' + this.port
+		});
+
+		// --- NEW NAMESPACE LOGIC ---
+		let ns = params.namespace || "";
+		if (ns !== "" && !ns.startsWith('/')) { ns = '/' + ns; }
+		if (ns !== "" && !ns.endsWith('/')) { ns += '/'; }
+		if (ns === "") { ns = "/"; }
+		this.ns = ns;
+		// ---------------------------
 
 		this.ros.on('connection', () => {
 			console.log('Connected to robot.');
-
 			this.connected = true;
 			this.status = "Connected.";
-
 			if(this.reset_reconnect){
-				location.reload(false); //otherwise topics won't re-subscribe automatically :/
+				location.reload(false); 
 			}
-
 			window.dispatchEvent(new Event('rosbridge_change'));
 		});
 
@@ -49,46 +54,46 @@ this.ros = new ROSLIB.Ros({
 			this.status = "Connection lost.";
 			this.reset_reconnect = true;
 			window.dispatchEvent(new Event('rosbridge_change'));
-
 			setTimeout(() => {
 				this.status = "Reconnecting...";
 				this.connect();
 			}, 1000);
 		});
 
+		// --- NAMESPACED SERVICE CLIENTS ---
 		this.topics_client = new ROSLIB.Service({
 			ros : this.ros,
-			name : 'rosapi/topics',
+			name : this.ns + 'rosapi/topics',
 			serviceType : 'rosapi_msgs/srv/Topics',
 		});
 
 		this.nodes_client = new ROSLIB.Service({
 			ros : this.ros,
-			name : 'rosapi/nodes',
+			name : this.ns + 'rosapi/nodes',
 			serviceType : 'rosapi_msgs/srv/Nodes',
 		});
 
 		this.publishers_client = new ROSLIB.Service({
 			ros : this.ros,
-			name : 'rosapi/publishers',
+			name : this.ns + 'rosapi/publishers',
 			serviceType : 'rosapi/Publishers',
 		});
 
 		this.subscribers_client = new ROSLIB.Service({
 			ros : this.ros,
-			name : 'rosapi/subscribers',
+			name : this.ns + 'rosapi/subscribers',
 			serviceType : 'rosapi/Subscribers',
 		});
 
 		this.services_client = new ROSLIB.Service({
 			ros : this.ros,
-			name : 'rosapi/services',
+			name : this.ns + 'rosapi/services',
 			serviceType : 'rosapi/Services',
 		});
 		
 		this.services_for_type_client = new ROSLIB.Service({
 			ros : this.ros,
-			name : 'rosapi/services_for_type',
+			name : this.ns + 'rosapi/services_for_type',
 			serviceType : 'rosapi/ServicesForType',
 		});
 
