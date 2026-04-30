@@ -37,7 +37,7 @@ function saveSettings(){
 async function getRecordingStatus(topics, start, path) {
 	const recordRosbagService = new ROSLIB.Service({
 		ros: rosbridge.ros,
-		name: "/vizanti/bag/status",
+		name: rosbridge.ns + "vizanti/bag/status",
 		serviceType: "std_srvs/srv/Trigger",
 	});
 
@@ -67,7 +67,7 @@ function getCurrentDateTimeString() {
 async function recordRosbag(topics, start, path) {
 	const recordRosbagService = new ROSLIB.Service({
 		ros: rosbridge.ros,
-		name: "/vizanti/bag/setup",
+		name: rosbridge.ns + "vizanti/bag/setup",
 		serviceType: "vizanti_msgs/srv/RecordRosbag",
 	});
 
@@ -132,7 +132,7 @@ selectAllButton.addEventListener('click', async () => {
 	let result = await rosbridge.get_all_topics();
 
 	result.topics.forEach((topic) => {
-		if(!topic.includes("/vizanti/tf_consolidated")){
+		if(!topic.includes("vizanti/tf_consolidated")){
 			topic_list.add(topic);
 		}
 	});
@@ -165,7 +165,7 @@ async function updateTopics(){
 	// Group topics by type
 	let topicsByType = new Map();
 	result.topics.forEach((topic, index) => {
-		if(!topic.includes("/vizanti/tf_consolidated")){
+		if(!topic.includes("vizanti/tf_consolidated")){
 			const type = result.types[index];
 			if (topicsByType.has(type)) {
 				topicsByType.get(type).push(topic);
