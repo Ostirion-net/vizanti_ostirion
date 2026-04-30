@@ -35,7 +35,7 @@ class TfConsolidator:public rclcpp::Node{
 				std::bind(&TfConsolidator::tf_callback, this, std::placeholders::_1)
 			);
 			tf_pub = create_publisher<tf2_msgs::msg::TFMessage>(
-				"/vizanti/tf_consolidated",
+				"vizanti/tf_consolidated",
 				rclcpp::QoS(10)
 					.durability(RMW_QOS_POLICY_DURABILITY_TRANSIENT_LOCAL) //latched in case there's no tf activity so that the web client can set itself up
 					.lifespan(rclcpp::Duration(0, 66000000))  // 66ms
@@ -49,14 +49,14 @@ class TfConsolidator:public rclcpp::Node{
 				std::bind(&TfConsolidator::tf_static_callback, this, std::placeholders::_1)
 			);
 			tf_static_pub = create_publisher<tf2_msgs::msg::TFMessage>(
-				"/vizanti/tf_static_consolidated",
+				"vizanti/tf_static_consolidated",
 				rclcpp::QoS(rclcpp::KeepLast(20))
 					.durability(RMW_QOS_POLICY_DURABILITY_TRANSIENT_LOCAL)
 					.reliability(RMW_QOS_POLICY_RELIABILITY_RELIABLE)
 			);
 
 			client_delta_sub = create_subscription<std_msgs::msg::Int32>(
-				"/client_count", 
+				"client_count", 
 				rclcpp::QoS(20), 
 				std::bind(&TfConsolidator::client_callback, this, std::placeholders::_1)
 			);
