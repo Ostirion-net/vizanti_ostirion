@@ -109,7 +109,8 @@ def list_ros_launch_params():
 	params = {
 		"port": param_port,
 		"port_rosbridge": param_port_rosbridge,
-		"compression": param_compression
+		"compression": param_compression,
+		"namespace": os.environ.get("ROS_NAMESPACE", "")
 	}
 	js_module = f"const params = {json.dumps(params)};\nexport default params;"
 	response = make_response(js_module)
