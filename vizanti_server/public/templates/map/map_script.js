@@ -18,7 +18,7 @@ let params = paramsModule.default;
 async function saveMap(save_path, topic) {
 	const saveMapService = new ROSLIB.Service({
 		ros: rosbridge.ros,
-		name: rosbridge.ns + "vizanti/save_map"
+		name: rosbridge.ns + "vizanti/save_map",
 		serviceType: "vizanti_msgs/srv/SaveMap",
 	});
 
