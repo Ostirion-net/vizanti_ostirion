@@ -202,21 +202,21 @@ async function loadTopics(){
 	});
 
 	emptysrvs.forEach(element => {
-		if(!element.includes("/vizanti/")){
+		if(!element.includes("vizanti/")){
 			topiclist += "<option value='"+element+"'>"+element+" (srvs/Empty)</option>";
 			typedict[element] = "std_srvs/srv/Empty";
 		}
 	});
 
 	triggersrvs.forEach(element => {
-		if(!element.includes("/vizanti/")){
+		if(!element.includes("vizanti/")){
 			topiclist += "<option value='"+element+"'>"+element+" (srvs/Trigger)</option>";
 			typedict[element] = "std_srvs/srv/Trigger";
 		}
 	});
 
 	setboolsrvs.forEach(element => {
-		if(!element.includes("/vizanti/")){
+		if(!element.includes("vizanti/")){
 			topiclist += "<option value='"+element+"'>"+element+" (srvs/SetBool)</option>";
 			typedict[element] = "std_srvs/srv/SetBool";
 		}
