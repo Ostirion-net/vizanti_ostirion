@@ -98,7 +98,7 @@ export class TF {
 
 		this.tf_static_topic = new ROSLIB.Topic({
 			ros: rosbridge.ros,
-			name: rosbridge.ns + '/vizanti/tf_static_consolidated',
+			name: rosbridge.ns + 'vizanti/tf_static_consolidated',
 			messageType: 'tf2_msgs/msg/TFMessage',
 			compression: rosbridge.compression
 		});
