@@ -6,7 +6,7 @@ let packages = [];
 async function runRosWTF() {
 	const wtfService = new ROSLIB.Service({
 		ros: rosbridge.ros,
-		name: "/vizanti/roswtf",
+		name: rosbridge.ns + "vizanti/roswtf"
 		serviceType: "std_srvs/srv/Trigger",
 	});
 
@@ -55,7 +55,7 @@ let lifecycles = {};
 async function getLifecycles() {
 	const getExecutablesService = new ROSLIB.Service({
 		ros: rosbridge.ros,
-		name: "/vizanti/list_lifecycle_nodes",
+		name: rosbridge.ns + "vizanti/list_lifecycle_nodes"
 		serviceType: "vizanti_msgs/srv/ListLifecycles",
 	});
 
@@ -77,7 +77,7 @@ async function getLifecycles() {
 async function getExecutables(pkg_name) {
 	const getExecutablesService = new ROSLIB.Service({
 		ros: rosbridge.ros,
-		name: "/vizanti/list_executables",
+		name: rosbridge.ns + "vizanti/list_executables",
 		serviceType: "vizanti_msgs/srv/ListExecutables",
 	});
 
@@ -93,7 +93,7 @@ async function getExecutables(pkg_name) {
 async function getPackages() {
 	const getPackagesService = new ROSLIB.Service({
 		ros: rosbridge.ros,
-		name: "/vizanti/list_packages",
+		name: rosbridge.ns + "vizanti/list_packages",
 		serviceType: "vizanti_msgs/srv/ListPackages",
 	});
 
@@ -109,7 +109,7 @@ async function getPackages() {
 async function startNode(command) {
 	const startService = new ROSLIB.Service({
 		ros: rosbridge.ros,
-		name: "/vizanti/node/start",
+		name: rosbridge.ns + "vizanti/node/start",
 		serviceType: "vizanti_msgs/srv/ManageNode",
 	});
 
@@ -125,7 +125,7 @@ async function startNode(command) {
 async function killNode(name) {
 	const killService = new ROSLIB.Service({
 		ros: rosbridge.ros,
-		name: "/vizanti/node/kill",
+		name: rosbridge.ns + "vizanti/node/kill",
 		serviceType: "vizanti_msgs/srv/ManageNode",
 	});
 
@@ -142,7 +142,7 @@ async function killNode(name) {
 async function nodeInfo(name) {
 	const infoService = new ROSLIB.Service({
 		ros: rosbridge.ros,
-		name: "/vizanti/node/info",
+		name: rosbridge.ns + "vizanti/node/info",
 		serviceType: "vizanti_msgs/srv/ManageNode",
 	});
 
