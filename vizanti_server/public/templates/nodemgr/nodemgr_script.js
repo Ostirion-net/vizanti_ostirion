@@ -6,7 +6,7 @@ let packages = [];
 async function runRosWTF() {
 	const wtfService = new ROSLIB.Service({
 		ros: rosbridge.ros,
-		name: rosbridge.ns + "vizanti/roswtf"
+		name: rosbridge.ns + "vizanti/roswtf",
 		serviceType: "std_srvs/srv/Trigger",
 	});
 
@@ -55,7 +55,7 @@ let lifecycles = {};
 async function getLifecycles() {
 	const getExecutablesService = new ROSLIB.Service({
 		ros: rosbridge.ros,
-		name: rosbridge.ns + "vizanti/list_lifecycle_nodes"
+		name: rosbridge.ns + "vizanti/list_lifecycle_nodes",
 		serviceType: "vizanti_msgs/srv/ListLifecycles",
 	});
 
