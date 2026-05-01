@@ -27,7 +27,7 @@ let cached_params = {};
 async function getNodeParameters(node) {
 	const getNodeParametersService = new ROSLIB.Service({
 		ros: rosbridge.ros,
-		name: "/vizanti/get_node_parameters",
+		name: rosbridge.ns + "vizanti/get_node_parameters",
 		serviceType: "vizanti_msgs/srv/GetNodeParameters",
 	});
 
@@ -44,7 +44,7 @@ async function getNodeParameters(node) {
 async function setNodeParameter(node, param, newValue) {
 	const setParamClient = new ROSLIB.Service({
 		ros: rosbridge.ros,
-		name: '/vizanti/set_node_parameter',
+		name: rosbridge.ns + "vizanti/set_node_parameter",
 		serviceType: 'vizanti_msgs/srv/SetNodeParameter',
 	});
 
