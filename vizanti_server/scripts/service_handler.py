@@ -138,10 +138,16 @@ class ServiceHandler(Node):
         try:
             args = req.node.split(" ")
 
+            # Use only ros2 as first command 'ros2'.
+            # Block 'curl', 'wget', 'bash', etc.
+            if args[0] != "ros2":
+                res.success = False
+                res.message = "Security Exception: Only 'ros2' commands are permitted."
+                return res
+
             # Open /dev/null
             devnull = open(os.devnull, 'w')
 
-            # Set up the process to ignore the SIGTERM signal
             def preexec():
                 os.setpgrp()
                 sys.stdin = open(os.devnull, 'r')
@@ -149,7 +155,6 @@ class ServiceHandler(Node):
                 sys.stderr = open(os.devnull, 'w')
 
             subprocess.Popen(args, stdout=devnull, stderr=devnull, preexec_fn=preexec)
-
             self.get_logger().info("Starting node "+str(req.node))
 
             res.success = True
