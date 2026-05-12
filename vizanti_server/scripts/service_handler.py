@@ -121,10 +121,12 @@ class ServiceHandler(Node):
 
     def node_kill(self, req, res):
         try:
-            #ros 2 doesn't let you kill nodes in a legit way, so we have to be extra janky lol
-            #this seems to also have the weird side effect that it takes a year for ros2 node list to show the change
             self.get_logger().info("Attempting to kill node "+str(req.node))
-            subprocess.call("ps aux | grep '"+req.node+"' | awk '{print $2}' | xargs kill -9", shell=True)
+            
+            # Security issue, avoid command injection.
+            # pkill -9 -f searched the patterns and kills more securely.
+            subprocess.call(["pkill", "-9", "-f", req.node])
+            
             res.success = True
             res.message = f'Killed node {req.node}'
         except Exception as e:
