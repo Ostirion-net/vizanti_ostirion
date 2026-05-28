@@ -180,7 +180,17 @@ class ServiceHandler(Node):
 
     def node_info(self, req, res):
         try:
-            rosinfo = subprocess.check_output(["ros2", "node", "info", req.node]).decode('utf-8')
+            # SECURITY PATCH: Validate node name to prevent argument injection
+            if not re.match(r'^[\w\-\/]+$', req.node) or req.node.startswith('-'):
+                res.success = False
+                res.message = "Security Exception: Invalid node name provided."
+                return res
+
+            rosinfo = subprocess.check_output(
+                ["ros2", "node", "info", req.node], 
+                stderr=subprocess.DEVNULL
+            ).decode('utf-8')
+            
             rosinfo = rosinfo.replace("--------------------------------------------------------------------------------", "")
             res.success = True
             res.message = rosinfo
@@ -335,18 +345,33 @@ class ServiceHandler(Node):
                 response.success = False
                 response.message = "Already recording, please stop the current recording first."
             else:
-                command = ['ros2', 'bag', 'record', '-o']
+                # SECURITY PATCH 1: Path Traversal Protection
+                is_safe, expanded_path = self.is_safe_path(req.path)
+                if not is_safe:
+                    response.success = False
+                    response.message = "Security Exception: Access denied. Path must be within the user's home directory."
+                    return response
 
-                # Expand and add the path to the command
-                expanded_path = os.path.expanduser(req.path)
-                command.append(expanded_path)
+                command = ['ros2', 'bag', 'record', '-o', expanded_path]
 
-                # Add the topics to the command
+                # SECURITY PATCH 2: Argument Injection Protection
+                # Ensure topics only contain valid ROS 2 topic characters (alphanumeric, underscores, slashes).
+                # This explicitly blocks flags like '-a' or '--all'.
                 for topic in req.topics:
+                    if not re.match(r'^[\w\/]+$', topic):
+                        response.success = False
+                        response.message = f"Security Exception: Invalid topic name '{topic}'."
+                        return response
                     command.append(topic)
 
-                # Use subprocess to start rosbag record in a new process
-                self.proc = subprocess.Popen(command, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+                # Safely start the recording process
+                self.proc = subprocess.Popen(
+                    command, 
+                    stdout=subprocess.DEVNULL, 
+                    stderr=subprocess.DEVNULL,
+                    stdin=subprocess.DEVNULL,
+                    start_new_session=True
+                )
                 response.success = True
                 response.message = "Recording started."
 
