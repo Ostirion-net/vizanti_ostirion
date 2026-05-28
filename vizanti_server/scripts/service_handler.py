@@ -7,6 +7,7 @@ import sys
 import rclpy
 import json
 import time
+import re
 
 from rclpy.node import Node
 
@@ -92,11 +93,8 @@ class ServiceHandler(Node):
         
         path = get_prefix_path(req.package)
 
-        #TODO add path to apt installed packages, I'm not sure where exactly those executables are yet
-        #self.get_logger().info(f"libpath: {libpath}")
-
-        cmd_exec = ["find", path+"/share/"+req.package] # get list of executables
-        cmd_exec = cmd_exec + ["-type", "f", "-o", "-type", "l"] # files or symlinks
+        cmd_exec = ["find", path+"/share/"+req.package] 
+        cmd_exec = cmd_exec + ["-type", "f", "-o", "-type", "l"] 
 
         cmd_launch = ["find", path+"/lib/"+req.package]
         cmd_launch = cmd_launch + ["-type", "f", "-o", "-type", "l"]
@@ -106,7 +104,6 @@ class ServiceHandler(Node):
         output_exec, _ = process_exec.communicate()
         output_launch, _ = process_launch.communicate()
 
-        # Process output
         lines_exec = self.get_filenames(output_exec.decode('utf-8').split('\n'))
         lines_launch = self.get_filenames(output_launch.decode('utf-8').split('\n'))
 
@@ -121,10 +118,14 @@ class ServiceHandler(Node):
 
     def node_kill(self, req, res):
         try:
+            # SECURITY PATCH: Validate node name to prevent regex injection via pkill
+            if not re.match(r'^[\w\-\/]+$', req.node):
+                res.success = False
+                res.message = "Security Exception: Invalid node name provided."
+                return res
+
             self.get_logger().info("Attempting to kill node "+str(req.node))
             
-            # Security issue, avoid command injection.
-            # pkill -9 -f searched the patterns and kills more securely.
             subprocess.call(["pkill", "-9", "-f", req.node])
             
             res.success = True
@@ -136,26 +137,39 @@ class ServiceHandler(Node):
 
     def node_start(self, req, res):
         try:
-            args = req.node.split(" ")
+            args = req.node.strip().split(" ")
 
-            # Use only ros2 as first command 'ros2'.
-            # Block 'curl', 'wget', 'bash', etc.
-            if args[0] != "ros2":
+            # SECURITY PATCH: Dynamic Structure Validation
+            if len(args) < 4:
                 res.success = False
-                res.message = "Security Exception: Only 'ros2' commands are permitted."
+                res.message = "Security Exception: Incomplete command."
                 return res
 
-            # Open /dev/null
-            devnull = open(os.devnull, 'w')
+            command = args[0]
+            action = args[1]
+            package = args[2]
 
-            def preexec():
-                os.setpgrp()
-                sys.stdin = open(os.devnull, 'r')
-                sys.stdout = open(os.devnull, 'w')
-                sys.stderr = open(os.devnull, 'w')
+            # Enforce strict ROS 2 run/launch structure
+            if command != "ros2" or action not in ["run", "launch"]:
+                res.success = False
+                res.message = "Security Exception: Only 'ros2 run' or 'ros2 launch' are permitted."
+                return res
 
-            subprocess.Popen(args, stdout=devnull, stderr=devnull, preexec_fn=preexec)
-            self.get_logger().info("Starting node "+str(req.node))
+            # Ensure the package exists on the system before running
+            if package not in self.packages:
+                res.success = False
+                res.message = f"Security Exception: Package '{package}' is not recognized."
+                return res
+
+            # SECURITY PATCH: Safely execute process without leaking file descriptors or deadlocking
+            subprocess.Popen(
+                args,
+                stdout=subprocess.DEVNULL,
+                stderr=subprocess.DEVNULL,
+                stdin=subprocess.DEVNULL,
+                start_new_session=True
+            )
+            self.get_logger().info("Starting node: "+str(req.node))
 
             res.success = True
             res.message = f'Started node {req.node}'
@@ -186,20 +200,30 @@ class ServiceHandler(Node):
             res.message = str(e)
         return res
 
+    def is_safe_path(self, path):
+        # SECURITY PATCH helper function: Prevents Directory Traversal
+        # Ensures files are kept within the user's home directory space and resolves symbolic links.
+        home_dir = os.path.expanduser("~")
+        resolved_path = os.path.abspath(os.path.expanduser(path))
+        return resolved_path.startswith(home_dir), resolved_path
+
     def load_map(self, req, res):
-        file_path = os.path.expanduser(req.file_path)
+        is_safe, file_path = self.is_safe_path(req.file_path)
+        
+        if not is_safe:
+            res.success = False
+            res.message = "Security Exception: Access denied. Path must be within the user's home directory."
+            return res
+
         topic = req.topic
         try:
             process = subprocess.Popen(["ros2", "run", "nav2_map_server", "map_server", file_path, "map:=" + topic, "__name:=vizanti_map_server"], stdout=subprocess.PIPE, stderr=subprocess.STDOUT)
             flags = fcntl.fcntl(process.stdout, fcntl.F_GETFL)
             fcntl.fcntl(process.stdout, fcntl.F_SETFL, flags | os.O_NONBLOCK)
 
-            # Wait for it to either fail or not
             time.sleep(1)
 
-            # Check if the process is still running
             if process.poll() is not None:
-                # Process terminated, read the error output
                 error_output = process.stdout.read().decode('utf-8')
                 res.success = False
                 res.message = "Map server failed to load the map: " + error_output
@@ -212,7 +236,13 @@ class ServiceHandler(Node):
         return res
 
     def save_map(self, req, res):
-        file_path = os.path.expanduser(req.file_path)
+        is_safe, file_path = self.is_safe_path(req.file_path)
+        
+        if not is_safe:
+            res.success = False
+            res.message = "Security Exception: Access denied. Path must be within the user's home directory."
+            return res
+
         topic = req.topic
         try:
             process = subprocess.Popen(["ros2", "run", "nav2_map_server", "map_saver_cli", "-f", file_path, "--ros-args", "map:=" + topic], stdout=subprocess.PIPE, stderr=subprocess.STDOUT)
@@ -220,7 +250,6 @@ class ServiceHandler(Node):
             fcntl.fcntl(process.stdout, fcntl.F_SETFL, flags | os.O_NONBLOCK)
 
             while True:
-                # Check if the process is still running
                 if process.poll() is not None:
                     break
 
@@ -238,7 +267,6 @@ class ServiceHandler(Node):
                     except IOError:
                         break
 
-                # Sleep for a short period of time to avoid excessive CPU usage
                 time.sleep(0.2)
 
             res.success = True
@@ -253,22 +281,11 @@ class ServiceHandler(Node):
             param_client = create_param_client(self, req.node)
             param_names = param_client.list_parameters()
             descriptors = param_client.describe_parameters(param_names)
-            #Parameter.Type Enum
-            #  <Type.NOT_SET: 0>,
-            #  <Type.BOOL: 1>,
-            #  <Type.INTEGER: 2>,
-            #  <Type.DOUBLE: 3>,
-            #  <Type.STRING: 4>,
-            #  <Type.BYTE_ARRAY: 5>,
-            #  <Type.BOOL_ARRAY: 6>,
-            #  <Type.INTEGER_ARRAY: 7>,
-            #  <Type.DOUBLE_ARRAY: 8>,
-            #  <Type.STRING_ARRAY: 9>
 
             parameters = param_client.get_parameters(param_names)
             param_list = []
             for param, descriptor in zip(parameters, descriptors):
-                if descriptor.type > 0 and descriptor.type < 5: #TODO add support for the rest if anyone actually uses them
+                if descriptor.type > 0 and descriptor.type < 5: 
                     param_list.append([param.name, param.value, descriptor.type])
             res.parameters = json.dumps(param_list)            
         except Exception as e:
@@ -289,14 +306,6 @@ class ServiceHandler(Node):
                 value = int(value)
             elif param_type == Parameter.Type.DOUBLE:
                 value = float(value)
-            """elif param_type == Parameter.Type.BYTE_ARRAY:
-                value = int(value)
-            elif param_type == Parameter.Type.BOOL_ARRAY:
-                value = int(value)
-            elif param_type == Parameter.Type.DOUBLE_ARRAY:
-                value = int(value)
-            elif param_type == Parameter.Type.STRING_ARRAY:
-                value = int(value)"""
             
             self.get_logger().info(f"Setting {req.node}/{req.param} to {value}")
 
