@@ -1,5 +1,0 @@
-/**:
-  ros__parameters:
-    waypoints_topic: "/waypoints"
-    loop_topic: "/waypoints_loop"
-    action_server_name: "/navigate_through_poses"
