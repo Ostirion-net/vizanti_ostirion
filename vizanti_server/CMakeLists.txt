@@ -33,6 +33,7 @@ install(PROGRAMS
   scripts/server.py
   scripts/service_handler.py
   scripts/rqt_reconfigure_param_api.py
+  scripts/vizanti_nav2_bridge.py
   DESTINATION lib/${PROJECT_NAME}
 )
 

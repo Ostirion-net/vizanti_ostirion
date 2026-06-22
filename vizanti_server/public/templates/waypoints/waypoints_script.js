@@ -30,6 +30,7 @@ const dropdown = document.getElementById("{uniqueID}_dropdown");
 const buttontext = document.getElementById("{uniqueID}_buttontext");
 const margin = document.getElementById("{uniqueID}_margin");
 const startCheckbox = document.getElementById('{uniqueID}_startclosest');
+const loopCheckbox = document.getElementById('{uniqueID}_loopmission');
 
 const flipButton = document.getElementById("{uniqueID}_flip");
 const zSetButton = document.getElementById("{uniqueID}_z_set");
@@ -75,6 +76,7 @@ if(settings.hasOwnProperty("{uniqueID}")){
 
 	margin.value = loaded_data.margin ?? 0.8;
 	startCheckbox.checked = loaded_data.start_closest;
+	loopCheckbox.checked = loaded_data.loop_mission ?? false;
 
 	if(loaded_data.topic_type != undefined)
 		typedict[topic] = loaded_data.topic_type;
@@ -94,6 +96,15 @@ if(topic == ""){
 	saveSettings();
 }
 
+startCheckbox.addEventListener('change', ()=>{
+	drawWaypoints();
+	saveSettings();
+});
+
+loopCheckbox.addEventListener('change', ()=>{
+	saveSettings();
+});
+
 function saveSettings(){
 	settings["{uniqueID}"] = {
 		topic: topic,
@@ -102,6 +113,7 @@ function saveSettings(){
 		base_link_frame: base_link_frame,
 		points: points,
 		start_closest: startCheckbox.checked,
+		loop_mission: loopCheckbox.checked,
 		margin: margin.value
 	}
 	settings.save();
@@ -200,6 +212,15 @@ function sendMessage(pointlist){
 		poses: poseList
 	});
 	
+	// Tell the Python bridge if we are looping
+	const loopPublisher = new ROSLIB.Topic({
+		ros: rosbridge.ros,
+		name: '/waypoints_loop',
+		messageType: 'std_msgs/msg/Bool',
+		latched: true
+	});
+	loopPublisher.publish(new ROSLIB.Message({ data: loopCheckbox.checked }));
+
 	publisher.publish(pathMessage);
 	status.setOK();
 

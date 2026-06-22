@@ -89,12 +89,21 @@ def generate_launch_description():
         output='screen'
     )
 
+    nav2_bridge_node = launch_ros.actions.Node(
+        namespace=fleet_ns,
+        name='vizanti_nav2_bridge',
+        package='vizanti_server',
+        executable='vizanti_nav2_bridge.py',
+        output='screen'
+    )
+
     return launch.LaunchDescription([
         rosbridge_node,
         rosapi_node,
         flask_node,
         tf_handler_node,
-        service_handler_node
+        service_handler_node,
+        nav2_bridge_node
     ])
 
 if __name__ == '__main__':
