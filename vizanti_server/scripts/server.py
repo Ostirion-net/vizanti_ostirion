@@ -6,7 +6,8 @@ import logging
 import json
 import rclpy
 
-from flask import Flask, render_template, send_from_directory, make_response
+import json
+from flask import Flask, render_template, send_from_directory, make_response, request, jsonify
 from waitress.server import create_server
 
 from std_msgs.msg import String
@@ -105,6 +106,28 @@ def list_robot_model_files():
 def get_default_widget_config():
 	return get_file(param_default_widget_config)
 
+def save_config():
+	if request.content_length is not None and request.content_length > 100 * 1024:
+		return jsonify({"status": "error", "message": "Payload too large"}), 413
+		
+	try:
+		config_data = request.json 
+		if not config_data:
+			return jsonify({"status": "error", "message": "Invalid JSON"}), 400
+			
+		with open(param_default_widget_config, 'w') as f:
+			json.dump(config_data, f, indent=2)
+		return jsonify({"status": "success"})
+	except Exception as e:
+		return jsonify({"status": "error", "message": str(e)}), 500
+
+def load_config():
+	try:
+		with open(param_default_widget_config, 'r') as f:
+			return jsonify(json.load(f))
+	except Exception as e:
+		return jsonify({"status": "error", "message": str(e)}), 500
+
 def list_ros_launch_params():
 	params = {
 		"port": param_port,
@@ -189,6 +212,8 @@ def main(args=None):
 	app.add_url_rule(param_base_url + '/assets/robot_model/paths', 'list_robot_model_files', list_robot_model_files)
 	app.add_url_rule(param_base_url + '/ros_launch_params', 'ros_launch_params', list_ros_launch_params)
 	app.add_url_rule(param_base_url + '/default_widget_config', 'get_default_widget_config', get_default_widget_config)
+	app.add_url_rule(param_base_url + '/save_config', 'save_config', save_config, methods=['POST'])
+	app.add_url_rule(param_base_url + '/load_config', 'load_config', load_config, methods=['GET'])
 	app.add_url_rule(param_base_url + '/<path:path>', 'serve_static', serve_static)
 
 	server = ServerThread(app, param_host, param_port)

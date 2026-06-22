@@ -92,40 +92,44 @@ document.getElementById("{uniqueID}_delete_persistent").addEventListener("click"
 });
 
 document.getElementById("{uniqueID}_export_persistent").addEventListener("click", async (event) =>{
-
-	let filename = await prompt("Save as file (.json will be appended automatically):", "robot_config");
-	if (filename != null) {
-		saveJsonToFile(settings, filename+'.json');
+	if(await confirm("Save current layout to server? This will overwrite the default server layout.")){
+		try {
+			const response = await fetch('save_config', {
+				method: 'POST',
+				headers: { 'Content-Type': 'application/json' },
+				body: JSON.stringify(settings)
+			});
+			if(response.ok) {
+				alert("Layout successfully saved to the server.");
+			} else {
+				alert("Failed to save layout to server. Check terminal logs.");
+			}
+		} catch (error) {
+			console.error('Error saving config:', error);
+			alert("Network error while saving layout.");
+		}
 		modal.style.display = "none";
 	}
 });
 
-document.getElementById("{uniqueID}_import_persistent").addEventListener("click", (event) =>{
-
-	const input = document.createElement('input');
-	input.type = 'file';
-	input.accept = '.json';
-
-	input.onchange = (event) => {
-		const file = event.target.files[0];
-		const reader = new FileReader();
-
-		reader.onload = () => {
-			try {
-				settings.fromJSON(reader.result);
+document.getElementById("{uniqueID}_import_persistent").addEventListener("click", async (event) =>{
+	if(await confirm("Load layout from server? This will overwrite your current local layout.")){
+		try {
+			const response = await fetch('load_config');
+			if(response.ok) {
+				const data = await response.text();
+				settings.fromJSON(data);
 				settings.save();
 				location.reload(false);
-			} catch (error) {
-				console.error('Error importing JSON file:', error);
+			} else {
+				alert("Failed to load layout from server.");
 			}
-		};
-
-		reader.readAsText(file);
-	};
-
-	input.click();
-
-	modal.style.display = "none";
+		} catch (error) {
+			console.error('Error loading config:', error);
+			alert("Network error while loading layout.");
+		}
+		modal.style.display = "none";
+	}
 });
 
 
