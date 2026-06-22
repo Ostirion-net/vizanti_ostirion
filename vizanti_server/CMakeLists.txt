@@ -28,6 +28,11 @@ install(DIRECTORY
   DESTINATION share/${PROJECT_NAME}/
 )
 
+install(FILES
+  bridge_params.yaml
+  DESTINATION share/${PROJECT_NAME}/
+)
+
 install(PROGRAMS
   scripts/__init__.py
   scripts/server.py

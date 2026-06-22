@@ -12,16 +12,28 @@ class VizantiNav2Bridge(Node):
     def __init__(self):
         super().__init__('vizanti_nav2_bridge')
 
+        self.declare_parameter('waypoints_topic', '')
+        self.declare_parameter('loop_topic', '')
+        self.declare_parameter('action_server_name', '')
+
+        wpt_topic = self.get_parameter('waypoints_topic').get_parameter_value().string_value
+        l_topic = self.get_parameter('loop_topic').get_parameter_value().string_value
+        act_server = self.get_parameter('action_server_name').get_parameter_value().string_value
+
+        if not wpt_topic or not l_topic or not act_server:
+            self.get_logger().fatal("Missing parameters")
+            raise SystemExit("Missing parameters")
+
         self.subscription = self.create_subscription(
             PoseArray,
-            '/waypoints',
+            wpt_topic,
             self.waypoints_callback,
             10
         )
         
         self.loop_sub = self.create_subscription(
             Bool,
-            '/waypoints_loop',
+            l_topic,
             self.loop_callback,
             10
         )
@@ -29,7 +41,7 @@ class VizantiNav2Bridge(Node):
         self.action_client = ActionClient(
             self, 
             NavigateThroughPoses, 
-            '/navigate_through_poses'
+            act_server
         )
         
         self.is_looping = False
