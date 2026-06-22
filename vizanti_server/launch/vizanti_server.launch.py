@@ -90,21 +90,12 @@ def generate_launch_description():
         output='screen'
     )
 
-    bridge_config_path = os.path.join(
-        get_package_share_directory('vizanti_server'),
-        'bridge_params.yaml'
-    )
-
-    if not os.path.exists(bridge_config_path):
-        raise FileNotFoundError(f"CRITICAL: Configuration file missing at {bridge_config_path}")
-
     nav2_bridge_node = launch_ros.actions.Node(
         namespace=fleet_ns,
         name='vizanti_nav2_bridge',
         package='vizanti_server',
         executable='vizanti_nav2_bridge.py',
-        output='screen',
-        parameters=[bridge_config_path]
+        output='screen'
     )
 
     return launch.LaunchDescription([
