@@ -25,6 +25,7 @@ node = None
 param_base_url = ""
 param_port = 5000
 param_port_rosbridge = 5001
+param_client_port_rosbridge = 5001
 param_compression = "none"
 param_default_widget_config = ""
 
@@ -137,7 +138,7 @@ def load_config():
 def list_ros_launch_params():
 	params = {
 		"port": param_port,
-		"port_rosbridge": param_port_rosbridge,
+		"port_rosbridge": param_client_port_rosbridge,
 		"compression": param_compression,
 		"namespace": os.environ.get("ROS_NAMESPACE", "")
 	}
@@ -488,7 +489,7 @@ class VizantiSocketThread(threading.Thread):
 
 
 def main(args=None):
-	global node, param_base_url, param_port, param_port_rosbridge, param_compression, param_default_widget_config
+	global node, param_base_url, param_port, param_port_rosbridge, param_client_port_rosbridge, param_compression, param_default_widget_config
 
 	rclpy.init(args=args)
 	node = rclpy.create_node('vizanti_flask_node')
@@ -496,6 +497,7 @@ def main(args=None):
 	node.declare_parameter('host', '0.0.0.0')
 	node.declare_parameter('port', param_port)
 	node.declare_parameter('port_rosbridge', param_port_rosbridge)
+	node.declare_parameter('client_port_rosbridge', param_client_port_rosbridge)
 	node.declare_parameter('flask_debug', True)
 	node.declare_parameter('base_url', param_base_url)
 	node.declare_parameter('compression', param_compression)
@@ -505,6 +507,7 @@ def main(args=None):
 	param_host = node.get_parameter('host').value
 	param_port = node.get_parameter('port').value
 	param_port_rosbridge = node.get_parameter('port_rosbridge').value
+	param_client_port_rosbridge = node.get_parameter('client_port_rosbridge').value
 	param_base_url = node.get_parameter('base_url').value
 	param_compression = node.get_parameter('compression').value
 	param_default_widget_config = node.get_parameter('default_widget_config').value
