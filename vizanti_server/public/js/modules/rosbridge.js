@@ -1,179 +1,79 @@
-import '../lib/roslib.min.js';
+import { zenoh, MessageReader, MessageWriter } from '../lib/zenoh_foxglove_bundle.js';
+import { ROS2_SCHEMAS } from './schemas.js';
+
+window.ROSLIB = {
+    Ros: class {}, Topic: class { constructor(){} subscribe(){} unsubscribe(){} publish(){} },
+    Message: class { constructor(data) { Object.assign(this, data); } },
+    Service: class { constructor(){} callService(){} }, ServiceRequest: class { constructor(data) { Object.assign(this, data); } }
+};
 
 const paramsModule = await import(`${base_url}/ros_launch_params`);
 const params = paramsModule.default;
 
-class Rosbridge {
+class ZenohBridge {
+    constructor(url) {
+        this.url = url;
+        this.port = 8000;
+        this.session = null;
+        this.connected = false;
+        this.status = "Connecting...";
+        this.domain_prefix = "0/rt"; 
+        this.connect();
+    }
 
-	constructor(url) { 
-		this.url = url;
-		this.port = params.port_rosbridge;
-		this.compression = params.compression;
-		this.connected = false;
+    async connect() {
+        const locator_url = `ws://${this.url}:${this.port}`;
+        console.log(`Attempting Zenoh connection via locator: ${locator_url}`);
+        
+        try {
+            // THE FIX: The Wasm API explicitly demands a single 'locator' string.
+            this.session = await zenoh.open({ locator: locator_url });
+            
+            console.log('✅ Connected to Zenoh router natively!');
+            this.connected = true;
+            this.status = "Connected.";
+            window.dispatchEvent(new Event('rosbridge_change'));
+            
+        } catch (error) {
+            console.error("Zenoh connection failed (Is the router running?):", error.message || error);
+            this.connected = false;
+            this.status = "Connection lost.";
+            window.dispatchEvent(new Event('rosbridge_change'));
+            setTimeout(() => this.connect(), 2000);
+        }
+    }
 
-		this.connect();
-		this.status = "Connecting...";
+    async subscribe(topic_name, rootMessageName, callback) {
+        if (!this.session) return null;
+        if (!topic_name.startsWith('/')) topic_name = '/' + topic_name;
+        const zenoh_key = `${this.domain_prefix}${topic_name}`;
+        const reader = new MessageReader(ROS2_SCHEMAS);
 
-		this.reset_reconnect = false;
-	}
+        return await this.session.declareSubscriber(zenoh_key, (sample) => {
+            try { 
+                const rawBytes = new Uint8Array(sample.payload);
+                callback(reader.readMessage(rawBytes.subarray(4), rootMessageName)); 
+            } catch (err) {}
+        });
+    }
 
-	connect(){
-		this.connected = false;
-
-		let protocol = (window.location.protocol === "https:") ? "wss://" : "ws://";
-		this.ros = new ROSLIB.Ros({
-			url: protocol + this.url + ':' + this.port
-		});
-
-		// --- NEW NAMESPACE LOGIC ---
-		let ns = params.namespace || "";
-		if (ns !== "" && !ns.startsWith('/')) { ns = '/' + ns; }
-		if (ns !== "" && !ns.endsWith('/')) { ns += '/'; }
-		if (ns === "") { ns = "/"; }
-		this.ns = ns;
-		// ---------------------------
-
-		this.ros.on('connection', () => {
-			console.log('Connected to robot.');
-			this.connected = true;
-			this.status = "Connected.";
-			if(this.reset_reconnect){
-				location.reload(false); 
-			}
-			window.dispatchEvent(new Event('rosbridge_change'));
-		});
-
-		this.ros.on('error', (error) => {
-			this.connected = false;
-			this.status = "Failed to connect.";
-			window.dispatchEvent(new Event('rosbridge_change'));
-		});
-
-		this.ros.on('close', () => {
-			this.connected = false;
-			this.status = "Connection lost.";
-			this.reset_reconnect = true;
-			window.dispatchEvent(new Event('rosbridge_change'));
-			setTimeout(() => {
-				this.status = "Reconnecting...";
-				this.connect();
-			}, 1000);
-		});
-
-		// --- NAMESPACED SERVICE CLIENTS ---
-		this.topics_client = new ROSLIB.Service({
-			ros : this.ros,
-			name : this.ns + 'rosapi/topics',
-			serviceType : 'rosapi_msgs/srv/Topics',
-		});
-
-		this.nodes_client = new ROSLIB.Service({
-			ros : this.ros,
-			name : this.ns + 'rosapi/nodes',
-			serviceType : 'rosapi_msgs/srv/Nodes',
-		});
-
-		this.publishers_client = new ROSLIB.Service({
-			ros : this.ros,
-			name : this.ns + 'rosapi/publishers',
-			serviceType : 'rosapi/Publishers',
-		});
-
-		this.subscribers_client = new ROSLIB.Service({
-			ros : this.ros,
-			name : this.ns + 'rosapi/subscribers',
-			serviceType : 'rosapi/Subscribers',
-		});
-
-		this.services_client = new ROSLIB.Service({
-			ros : this.ros,
-			name : this.ns + 'rosapi/services',
-			serviceType : 'rosapi/Services',
-		});
-		
-		this.services_for_type_client = new ROSLIB.Service({
-			ros : this.ros,
-			name : this.ns + 'rosapi/services_for_type',
-			serviceType : 'rosapi/ServicesForType',
-		});
-
-		window.dispatchEvent(new Event('rosbridge_change'));
-	}
-
-	async get_all_nodes() {
-		return new Promise(async (resolve) => {
-			this.nodes_client.callService(new ROSLIB.ServiceRequest({}), function (result) {
-				resolve(result);
-			});
-		});
-	}
-
-	async get_all_topics() {
-		return new Promise((resolve) => {
-			this.topics_client.callService(new ROSLIB.ServiceRequest({}), (result) => {
-				const combined = result.topics.map((t, i) => [t, result.types[i]]);
-				combined.sort((a, b) => a[0].localeCompare(b[0]));
-				result.topics = combined.map(([t]) => t);
-				result.types = combined.map(([, ty]) => ty);
-				resolve(result);
-			});
-		});
-	}
-	
-	async get_topics(requested_type) {
-		return new Promise(async (resolve) => {
-			this.topics_client.callService(new ROSLIB.ServiceRequest({}), function (result) {
-	
-				let topics = result.topics;
-				let types = result.types;
-	
-				let matching = [];
-				for (let i = 0; i < topics.length; i++) {
-					if (types[i] == requested_type) {
-						matching.push(topics[i]);
-					}
-				}
-					
-				matching.sort();
-				resolve(matching);
-			});
-		});
-	}
-	
-
-	async get_services(requested_type) {
-		return new Promise((resolve, reject) => {
-			const request = new ROSLIB.ServiceRequest({ type: requested_type });
-	
-			this.services_for_type_client.callService(request, (result) => {
-				resolve(result.services);
-			}, (err) => {
-				console.error(`Failed to fetch services for type ${requested_type}:`, err);
-				resolve([]);
-			});
-		});
-	}
-
-	async get_topic_publishers_and_subscribers(topic) {
-		const publishersRequest = new ROSLIB.ServiceRequest({ topic: topic });
-		const subscribersRequest = new ROSLIB.ServiceRequest({ topic: topic });
-
-		const publishersPromise = new Promise((resolve) => {
-			this.publishers_client.callService(publishersRequest, (result) => {
-				resolve(result.publishers);
-			});
-		});
-
-		const subscribersPromise = new Promise((resolve) => {
-			this.subscribers_client.callService(subscribersRequest, (result) => {
-				resolve(result.subscribers);
-			});
-		});
-
-		const [publishers, subscribers] = await Promise.all([publishersPromise, subscribersPromise]);
-
-		return { publishers, subscribers };
-	}
+    async publish(topic_name, rootMessageName, jsObject) {
+        if (!this.session) return;
+        if (!topic_name.startsWith('/')) topic_name = '/' + topic_name;
+        const zenoh_key = `${this.domain_prefix}${topic_name}`;
+        const writer = new MessageWriter(ROS2_SCHEMAS);
+        
+        const messageBytes = writer.writeMessage(jsObject, rootMessageName);
+        const cdrHeader = new Uint8Array([0x00, 0x01, 0x00, 0x00]);
+        const payload = new Uint8Array(cdrHeader.length + messageBytes.length);
+        payload.set(cdrHeader); payload.set(messageBytes, cdrHeader.length);
+        
+        const publisher = await this.session.declarePublisher(zenoh_key);
+        await publisher.put(payload);
+    }
+    
+    async get_all_nodes() { return { nodes: [] }; } async get_all_topics() { return { topics: [], types: [] }; }
+    async get_topics() { return []; } async get_services() { return []; } async get_topic_publishers_and_subscribers() { return { publishers: [], subscribers: [] }; }
 }
 
-export var rosbridge = new Rosbridge(window.location.hostname);
+export var rosbridge = new ZenohBridge(window.location.hostname);

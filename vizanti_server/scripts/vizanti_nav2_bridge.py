@@ -1,81 +1,105 @@
 #!/usr/bin/env python3
 import rclpy
 from rclpy.node import Node
-from rclpy.action import ActionClient
+from rclpy.executors import MultiThreadedExecutor
 from geometry_msgs.msg import PoseArray, PoseStamped
 from std_msgs.msg import Bool
-from nav2_msgs.action import NavigateThroughPoses
-from action_msgs.msg import GoalStatus
 
-class VizantiNav2Bridge(Node):
+# The Official Nav2 API
+from nav2_simple_commander.robot_navigator import BasicNavigator, TaskResult
+
+class VizantiMissionExecutive(Node):
     def __init__(self):
-        super().__init__('vizanti_nav2_bridge')
-        self.subscription = self.create_subscription(PoseArray, '/waypoints', self.waypoints_callback, 10)
+        super().__init__('vizanti_mission_executive')
+        
+        self.navigator = BasicNavigator()
+        
+        # Listen to Vizanti UI (Isolated Topic)
+        self.subscription = self.create_subscription(PoseArray, '/vizanti_waypoints', self.waypoints_callback, 10)
         self.loop_sub = self.create_subscription(Bool, '/waypoints_loop', self.loop_callback, 10)
-        self.action_client = ActionClient(self, NavigateThroughPoses, '/navigate_through_poses')
         
         self.is_looping = False
         self.current_poses = []
-        self.current_header = None
-        self.active_goal_handle = None
+        self.mission_active = False
 
-        self.get_logger().info("Vizanti <-> Nav2 Waypoint Bridge initialized (Global Paths).")
+        # Check Nav2 status every 0.5s without blocking ROS callbacks
+        self.timer = self.create_timer(0.5, self.monitor_mission)
+
+        self.get_logger().info("Mission Executive initialized via nav2_simple_commander.")
 
     def loop_callback(self, msg: Bool):
         self.is_looping = msg.data
-        self.get_logger().info(f"Mission looping set to: {self.is_looping}")
 
     def waypoints_callback(self, msg: PoseArray):
         if not msg.poses:
-            self.get_logger().info("Received empty waypoints. Canceling mission.")
+            self.get_logger().info("Empty waypoints received. Canceling task...")
+            self.navigator.cancelTask()
             self.current_poses = []
-            if self.active_goal_handle:
-                self.active_goal_handle.cancel_goal_async()
-                self.active_goal_handle = None
+            self.mission_active = False
             return
 
-        self.get_logger().info(f"Received {len(msg.poses)} waypoints. Translating to Nav2 Action...")
-        self.current_poses = msg.poses
-        self.current_header = msg.header
-        self.send_mission()
-
-    def send_mission(self):
-        if not self.current_poses: return
-        if not self.action_client.wait_for_server(timeout_sec=3.0):
-            self.get_logger().error("Nav2 action server is not available!")
-            return
-        goal_msg = NavigateThroughPoses.Goal()
-        for pose in self.current_poses:
+        self.get_logger().info(f"Received {len(msg.poses)} waypoints. Generating plan...")
+        self.current_poses = []
+        for pose in msg.poses:
             pose_stamped = PoseStamped()
-            pose_stamped.header = self.current_header 
+            pose_stamped.header = msg.header
             pose_stamped.pose = pose
-            goal_msg.poses.append(pose_stamped)
-        send_goal_future = self.action_client.send_goal_async(goal_msg)
-        send_goal_future.add_done_callback(self.goal_response_callback)
+            self.current_poses.append(pose_stamped)
 
-    def goal_response_callback(self, future):
-        self.active_goal_handle = future.result()
-        if not self.active_goal_handle.accepted:
-            self.get_logger().warning("Goal rejected by Nav2.")
+        self.start_mission()
+
+    def start_mission(self):
+        if not self.current_poses: return
+        
+        self.get_logger().info("Dispatching waypoints to Nav2...")
+        self.navigator.followWaypoints(self.current_poses)
+        self.mission_active = True
+
+    def monitor_mission(self):
+        if not self.mission_active:
             return
-        self.get_logger().info("Goal accepted by Nav2, executing...")
-        get_result_future = self.active_goal_handle.get_result_async()
-        get_result_future.add_done_callback(self.get_result_callback)
 
-    def get_result_callback(self, future):
-        status = future.result().status
-        self.get_logger().info(f"Mission finished with status code: {status}")
-        if self.is_looping and self.current_poses and status == GoalStatus.STATUS_SUCCEEDED:
-            self.get_logger().info("Looping enabled. Restarting mission...")
-            self.send_mission()
-        else:
-            self.active_goal_handle = None
+        # Let the API check the internal state machine
+        if not self.navigator.isTaskComplete():
+            return
+
+        self.mission_active = False
+        result = self.navigator.getResult()
+
+        if result == TaskResult.SUCCEEDED:
+            self.get_logger().info("Waypoints successfully reached!")
+            
+            if self.is_looping and len(self.current_poses) > 1:
+                self.get_logger().info("Patrol loop enabled. Reversing route...")
+                self.current_poses.reverse()
+                
+                # Prevent tf2 extrapolation by refreshing timestamp
+                now = self.navigator.get_clock().now().to_msg()
+                for p in self.current_poses:
+                    p.header.stamp = now
+                    
+                self.start_mission()
+                
+        elif result == TaskResult.CANCELED:
+            self.get_logger().info("Mission canceled by user.")
+        elif result == TaskResult.FAILED:
+            self.get_logger().error("Nav2 failed to complete mission.")
 
 def main(args=None):
     rclpy.init(args=args)
-    node = VizantiNav2Bridge()
-    rclpy.spin(node)
-    rclpy.shutdown()
+    executive = VizantiMissionExecutive()
+    
+    # We use a MultiThreadedExecutor so the Navigator API and our Node don't block each other
+    executor = MultiThreadedExecutor()
+    executor.add_node(executive)
+    
+    try:
+        executor.spin()
+    except KeyboardInterrupt:
+        pass
+    finally:
+        executive.navigator.lifecycleShutdown()
+        rclpy.shutdown()
 
 if __name__ == '__main__':
     main()
