@@ -1,5 +1,15 @@
 import { rosbridge } from './rosbridge.js';
 
+const paramsModule = await import(`${base_url}/ros_launch_params`);
+const params = paramsModule.default;
+
+function namespacedTopic(namespace, topic) {
+	const cleanNamespace = (namespace || "").replace(/^\/+|\/+$/g, "");
+	const cleanTopic = topic.replace(/^\/+/, "");
+	return "/" + (cleanNamespace ? cleanNamespace + "/" : "") + cleanTopic;
+}
+
+
 /* class TimeStampedData {
 	constructor(maxLength) {
 		this.maxLength = maxLength;
@@ -77,7 +87,7 @@ export class TF {
 
 		this.tf_topic = new ROSLIB.Topic({
 			ros: rosbridge.ros,
-			name: '/vizanti/tf_consolidated',
+			name: namespacedTopic(params.namespace, 'vizanti/tf_consolidated'),
 			messageType: 'tf2_msgs/msg/TFMessage',
 			throttle_rate: 33,
 			compression: rosbridge.compression
@@ -98,7 +108,7 @@ export class TF {
 
 		this.tf_static_topic = new ROSLIB.Topic({
 			ros: rosbridge.ros,
-			name: '/vizanti/tf_static_consolidated',
+			name: namespacedTopic(params.namespace, 'vizanti/tf_static_consolidated'),
 			messageType: 'tf2_msgs/msg/TFMessage',
 			compression: rosbridge.compression
 		});
