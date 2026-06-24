@@ -12,6 +12,7 @@ def generate_launch_description():
     base_url = launch.substitutions.LaunchConfiguration('base_url', default='') #e.g. /vizanti
     port = launch.substitutions.LaunchConfiguration('port', default=5000)
     port_rosbridge = launch.substitutions.LaunchConfiguration('port_rosbridge', default=5001)
+    vizanti_socket_qos_depth = launch.substitutions.LaunchConfiguration('vizanti_socket_qos_depth', default=10)
     client_port_rosbridge = launch.substitutions.LaunchConfiguration('client_port_rosbridge', default=443)
     flask_debug = launch.substitutions.LaunchConfiguration('flask_debug', default=True)
     default_widget_config = launch.substitutions.LaunchConfiguration('default_widget_config', default='') #e.g. ~/your_custom_config.json
@@ -66,11 +67,12 @@ def generate_launch_description():
         parameters=[
             {'host': '0.0.0.0'},
             {'port': port},
-            {'port_rosbridge': client_port_rosbridge},
+            {'port_rosbridge': port_rosbridge},
             {'flask_debug': flask_debug},
             {'base_url': base_url},
             {'compression': "none"},
-            {'default_widget_config': default_widget_config}
+            {'default_widget_config': default_widget_config},
+            {'vizanti_socket_qos_depth': vizanti_socket_qos_depth}
         ]
     )
 
@@ -99,8 +101,6 @@ def generate_launch_description():
     )
 
     return launch.LaunchDescription([
-        rosbridge_node,
-        rosapi_node,
         flask_node,
         tf_handler_node,
         service_handler_node,

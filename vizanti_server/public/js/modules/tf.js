@@ -77,7 +77,7 @@ export class TF {
 
 		this.tf_topic = new ROSLIB.Topic({
 			ros: rosbridge.ros,
-			name: rosbridge.ns + 'vizanti/tf_consolidated',
+			name: '/vizanti/tf_consolidated',
 			messageType: 'tf2_msgs/msg/TFMessage',
 			throttle_rate: 33,
 			compression: rosbridge.compression
@@ -98,7 +98,7 @@ export class TF {
 
 		this.tf_static_topic = new ROSLIB.Topic({
 			ros: rosbridge.ros,
-			name: rosbridge.ns + 'vizanti/tf_static_consolidated',
+			name: '/vizanti/tf_static_consolidated',
 			messageType: 'tf2_msgs/msg/TFMessage',
 			compression: rosbridge.compression
 		});
