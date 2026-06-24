@@ -96,9 +96,13 @@ class VizantiBridge {
         const url = scheme + this.url + ":" + this.socket_port;
         this.status = "Connecting...";
         window.dispatchEvent(new Event("rosbridge_change"));
+        this.socket_url = url;
+        this.socket_opened_at = null;
         this.socket = new WebSocket(url);
         this.socket.binaryType = "arraybuffer";
         this.socket.onopen = () => {
+            this.socket_opened_at = performance.now();
+            console.info("Vizanti WebSocket connected:", this.socket_url);
             this.connected = true;
             this.status = "Connected.";
             window.dispatchEvent(new Event("rosbridge_change"));
@@ -109,12 +113,24 @@ class VizantiBridge {
             }
             this.handleBinary(event.data);
         };
-        this.socket.onclose = () => {
+        this.socket.onclose = (event) => {
+            const age = this.socket_opened_at === null ? null : Math.round(performance.now() - this.socket_opened_at);
+            console.warn("Vizanti WebSocket closed:", {
+                url: this.socket_url,
+                code: event.code,
+                reason: event.reason,
+                wasClean: event.wasClean,
+                age_ms: age
+            });
             this.connected = false;
             this.status = "Connection lost.";
             window.dispatchEvent(new Event("rosbridge_change"));
         };
-        this.socket.onerror = () => {
+        this.socket.onerror = (event) => {
+            console.error("Vizanti WebSocket error:", {
+                url: this.socket_url,
+                event: event
+            });
             this.connected = false;
             this.status = "Connection error.";
             window.dispatchEvent(new Event("rosbridge_change"));
