@@ -92,7 +92,8 @@ class VizantiBridge {
     }
 
     connect() {
-        const url = "ws://" + this.url + ":" + this.socket_port;
+        const scheme = window.location.protocol === "https:" ? "wss://" : "ws://";
+        const url = scheme + this.url + ":" + this.socket_port;
         this.status = "Connecting...";
         window.dispatchEvent(new Event("rosbridge_change"));
         this.socket = new WebSocket(url);
