@@ -5,7 +5,6 @@ import base64
 import hashlib
 import socket
 import struct
-import time
 import threading
 import logging
 import json
@@ -205,8 +204,6 @@ class VizantiSocketThread(threading.Thread):
 	OP_MESSAGE = 4
 	OP_SUBSCRIBE_ACK = 5
 	OP_PUBLISH = 6
-	OP_PING = 7
-	OP_PONG = 8
 
 	def __init__(self, host, port, node, qos_depth):
 		threading.Thread.__init__(self)
@@ -219,7 +216,6 @@ class VizantiSocketThread(threading.Thread):
 		self.sock = None
 		self.lock = threading.Lock()
 		self.client_topics = {}
-		self.client_send_locks = {}
 		self.subscriptions = {}
 		self.publishers = {}
 
@@ -236,7 +232,6 @@ class VizantiSocketThread(threading.Thread):
 				client, _ = self.sock.accept()
 				with self.lock:
 					self.client_topics[client] = set()
-					self.client_send_locks[client] = threading.Lock()
 				threading.Thread(
 					target=self.handle_client,
 					args=(client,),
@@ -263,7 +258,6 @@ class VizantiSocketThread(threading.Thread):
 		finally:
 			with self.lock:
 				self.client_topics.pop(client, None)
-				self.client_send_locks.pop(client, None)
 			client.close()
 
 	def handle_payload(self, client, payload):
@@ -275,9 +269,6 @@ class VizantiSocketThread(threading.Thread):
 			return
 		if op == self.OP_GET_TOPICS:
 			self.send_topic_list(client, request_id)
-		if op == self.OP_PING:
-			header = struct.pack(">BII", self.OP_PONG, request_id, 0)
-			self.send_ws_frame(client, header)
 		if op == self.OP_SUBSCRIBE:
 			topic, type_name = self.parse_topic_type(body)
 			self.add_client_topic(client, topic)
@@ -387,7 +378,7 @@ class VizantiSocketThread(threading.Thread):
 			if topic not in topics:
 				continue
 			try:
-				self.send_ws_frame(client, frame, topic=topic, type_name=type_name, raw_len=len(raw))
+				self.send_ws_frame(client, frame)
 			except OSError:
 				dead.append(client)
 		if not dead:
@@ -395,7 +386,6 @@ class VizantiSocketThread(threading.Thread):
 		with self.lock:
 			for client in dead:
 				self.client_topics.pop(client, None)
-				self.client_send_locks.pop(client, None)
 
 	def send_topic_list(self, client, request_id):
 		parts = []
@@ -456,7 +446,7 @@ class VizantiSocketThread(threading.Thread):
 			return b""
 		return payload
 
-	def send_ws_frame(self, client, payload, topic=None, type_name=None, raw_len=None):
+	def send_ws_frame(self, client, payload):
 		header = bytearray()
 		header.append(130)
 		size = len(payload)
@@ -468,23 +458,7 @@ class VizantiSocketThread(threading.Thread):
 		else:
 			header.append(127)
 			header.extend(size.to_bytes(8, "big"))
-
-		with self.lock:
-			send_lock = self.client_send_locks.get(client)
-
-		if send_lock is None:
-			raise OSError("client send lock missing")
-
-		op = payload[0] if payload else -1
-		started = time.monotonic()
-		with send_lock:
-			client.sendall(bytes(header) + payload)
-		elapsed_ms = int((time.monotonic() - started) * 1000)
-
-		if elapsed_ms > 500:
-			self.node.get_logger().warning(
-				f"Vizanti slow websocket send: op={op} topic={topic} type={type_name} raw_len={raw_len} frame_bytes={len(payload)} elapsed_ms={elapsed_ms}"
-			)
+		client.sendall(bytes(header) + payload)
 
 	def shutdown(self):
 		self.stop_event.set()
