@@ -8,6 +8,8 @@ const OP_SUBSCRIBE = 3;
 const OP_MESSAGE = 4;
 const OP_SUBSCRIBE_ACK = 5;
 const OP_PUBLISH = 6;
+const OP_PING = 7;
+const OP_PONG = 8;
 
 if (!window.ROSLIB) {
     window.ROSLIB = {};
@@ -88,7 +90,13 @@ class VizantiBridge {
         this.topic_callbacks = new Map();
         this.connected = false;
         this.status = "Connecting...";
+        this.trace_key = "vizanti_ws_trace";
+        this.trace_limit = 200;
+        this.heartbeat_timer = null;
+        this.heartbeat_in_flight = false;
+        this.last_rx_at = null;
         this.connect();
+        this.startHeartbeat();
     }
 
     connect() {
@@ -103,6 +111,7 @@ class VizantiBridge {
         this.socket.onopen = () => {
             this.socket_opened_at = performance.now();
             console.info("Vizanti WebSocket connected:", this.socket_url);
+            this.trace("ws_open", { url: this.socket_url });
             this.connected = true;
             this.status = "Connected.";
             window.dispatchEvent(new Event("rosbridge_change"));
@@ -115,6 +124,13 @@ class VizantiBridge {
         };
         this.socket.onclose = (event) => {
             const age = this.socket_opened_at === null ? null : Math.round(performance.now() - this.socket_opened_at);
+            this.trace("ws_close", {
+                url: this.socket_url,
+                code: event.code,
+                reason: event.reason,
+                wasClean: event.wasClean,
+                age_ms: age
+            });
             console.warn("Vizanti WebSocket closed:", {
                 url: this.socket_url,
                 code: event.code,
@@ -127,6 +143,9 @@ class VizantiBridge {
             window.dispatchEvent(new Event("rosbridge_change"));
         };
         this.socket.onerror = (event) => {
+            this.trace("ws_error", {
+                url: this.socket_url
+            });
             console.error("Vizanti WebSocket error:", {
                 url: this.socket_url,
                 event: event
@@ -148,7 +167,59 @@ class VizantiBridge {
         });
     }
 
-    async request(op, payload) {
+    trace(eventName, details = {}) {
+        const record = {
+            t: new Date().toISOString(),
+            event: eventName,
+            connected: this.connected,
+            status: this.status,
+            pending_requests: this.pending_requests.size,
+            last_rx_age_ms: this.last_rx_at === null ? null : Math.round(performance.now() - this.last_rx_at),
+            ...details
+        };
+
+        try {
+            const trace = JSON.parse(localStorage.getItem(this.trace_key) || "[]");
+            trace.push(record);
+            localStorage.setItem(this.trace_key, JSON.stringify(trace.slice(-this.trace_limit)));
+        } catch (error) {
+            console.warn("Vizanti trace write failed:", error);
+        }
+    }
+
+    startHeartbeat() {
+        if (this.heartbeat_timer !== null) {
+            return;
+        }
+
+        this.heartbeat_timer = window.setInterval(() => {
+            this.heartbeat();
+        }, 5000);
+    }
+
+    async heartbeat() {
+        if (!this.socket || this.socket.readyState !== WebSocket.OPEN || this.heartbeat_in_flight) {
+            return;
+        }
+
+        this.heartbeat_in_flight = true;
+        const started = performance.now();
+
+        try {
+            await this.request(OP_PING, new Uint8Array(), 2000);
+            this.trace("heartbeat_ok", {
+                rtt_ms: Math.round(performance.now() - started)
+            });
+        } catch (error) {
+            this.trace("heartbeat_fail", {
+                error: String(error)
+            });
+        } finally {
+            this.heartbeat_in_flight = false;
+        }
+    }
+
+    async request(op, payload, timeoutMs = 5000) {
         await this.waitOpen();
         const requestId = this.next_request_id++;
         const header = new Uint8Array(9);
@@ -160,8 +231,29 @@ class VizantiBridge {
         frame.set(header, 0);
         frame.set(payload, 9);
         return new Promise((resolve, reject) => {
-            this.pending_requests.set(requestId, { resolve, reject });
-            this.socket.send(frame);
+            const timer = window.setTimeout(() => {
+                this.pending_requests.delete(requestId);
+                reject(new Error("Vizanti request timeout op=" + op + " id=" + requestId));
+            }, timeoutMs);
+
+            this.pending_requests.set(requestId, {
+                resolve: (value) => {
+                    window.clearTimeout(timer);
+                    resolve(value);
+                },
+                reject: (error) => {
+                    window.clearTimeout(timer);
+                    reject(error);
+                }
+            });
+
+            try {
+                this.socket.send(frame);
+            } catch (error) {
+                window.clearTimeout(timer);
+                this.pending_requests.delete(requestId);
+                reject(error);
+            }
         });
     }
 
@@ -177,14 +269,11 @@ class VizantiBridge {
             return;
         }
         if (op === OP_MESSAGE) {
+            this.last_rx_at = performance.now();
             this.handleMessageFrame(buffer.slice(9));
             return;
         }
         const pending = this.pending_requests.get(requestId);
-        if (!pending) {
-            return;
-        }
-        this.pending_requests.delete(requestId);
         if (!pending) {
             return;
         }
@@ -194,6 +283,10 @@ class VizantiBridge {
             return;
         }
         if (op === OP_SUBSCRIBE_ACK) {
+            pending.resolve({ ok: true });
+            return;
+        }
+        if (op === OP_PONG) {
             pending.resolve({ ok: true });
             return;
         }
