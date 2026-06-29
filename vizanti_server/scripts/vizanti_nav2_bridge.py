@@ -10,9 +10,9 @@ from nav2_simple_commander.robot_navigator import BasicNavigator, TaskResult
 
 class VizantiMissionExecutive(Node):
     def __init__(self):
-        super().__init__('vizanti_mission_executive')
+        super().__init__('vizanti_nav2_bridge')
         
-        self.navigator = BasicNavigator()
+        self.navigator = BasicNavigator(node_name='vizanti_basic_navigator')
         
         # Listen to Vizanti UI (Isolated Topic)
         self.subscription = self.create_subscription(PoseArray, '/vizanti_waypoints', self.waypoints_callback, 10)

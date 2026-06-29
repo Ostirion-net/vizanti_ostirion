@@ -95,7 +95,6 @@ def generate_launch_description():
 
     nav2_bridge_node = launch_ros.actions.Node(
         namespace=fleet_ns,
-        name='vizanti_nav2_bridge',
         package='vizanti_server',
         executable='vizanti_nav2_bridge.py',
         output='screen'
