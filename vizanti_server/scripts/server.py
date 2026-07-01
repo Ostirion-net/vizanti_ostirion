@@ -416,34 +416,57 @@ class VizantiSocketThread(threading.Thread):
 		)
 		self.send_ws_frame(client, header + body)
 
-	def read_ws_frame(self, client):
-		header = client.recv(2)
-		if len(header) < 2:
-			return None
-		opcode = header[0] & 15
-		length = header[1] & 127
-		if length == 126:
-			length = int.from_bytes(client.recv(2), "big")
-		elif length == 127:
-			length = int.from_bytes(client.recv(8), "big")
-		mask = b""
-		if header[1] & 128:
-			mask = client.recv(4)
-		payload = b""
-		while len(payload) < length:
-			chunk = client.recv(length - len(payload))
+	def recv_exact(self, client, size):
+		data = b""
+		while len(data) < size:
+			chunk = client.recv(size - len(data))
 			if chunk == b"":
 				return None
-			payload += chunk
-		if mask:
-			payload = bytes(
-				value ^ mask[index % 4]
-				for index, value in enumerate(payload)
-			)
+			data += chunk
+		return data
+
+	def read_ws_frame(self, client):
+		header = self.recv_exact(client, 2)
+		if header is None:
+			return None
+
+		opcode = header[0] & 15
+		masked = (header[1] & 128) != 0
+		length = header[1] & 127
+
+		if length == 126:
+			extended = self.recv_exact(client, 2)
+			if extended is None:
+				return None
+			length = int.from_bytes(extended, "big")
+		elif length == 127:
+			extended = self.recv_exact(client, 8)
+			if extended is None:
+				return None
+			length = int.from_bytes(extended, "big")
+
 		if opcode == 8:
 			return None
+
+		if not masked:
+			return b""
+
+		mask = self.recv_exact(client, 4)
+		if mask is None:
+			return None
+
+		payload = self.recv_exact(client, length)
+		if payload is None:
+			return None
+
+		payload = bytes(
+			value ^ mask[index % 4]
+			for index, value in enumerate(payload)
+		)
+
 		if opcode != 2:
 			return b""
+
 		return payload
 
 	def send_ws_frame(self, client, payload):
