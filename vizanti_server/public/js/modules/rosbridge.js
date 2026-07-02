@@ -8,6 +8,7 @@ const OP_SUBSCRIBE = 3;
 const OP_MESSAGE = 4;
 const OP_SUBSCRIBE_ACK = 5;
 const OP_PUBLISH = 6;
+const OP_UNSUBSCRIBE = 7;
 
 if (!window.ROSLIB) {
     window.ROSLIB = {};
@@ -24,6 +25,7 @@ window.ROSLIB.Topic = class {
     subscribe(callback) {
         const topicName = this.args.name;
         const typeName = this.args.messageType;
+        const throttleRateMs = this.args.throttle_rate === undefined ? 0 : Number(this.args.throttle_rate);
 
         if (!topicName) {
             throw new Error("ROSLIB.Topic missing name");
@@ -31,10 +33,13 @@ window.ROSLIB.Topic = class {
         if (!typeName) {
             throw new Error("ROSLIB.Topic missing messageType");
         }
+        if (!Number.isFinite(throttleRateMs) || throttleRateMs < 0) {
+            throw new Error("ROSLIB.Topic invalid throttle_rate");
+        }
 
         this.unsubscribed = false;
         this.subscription_promise = rosbridge
-            .subscribe(topicName, typeName, callback)
+            .subscribe(topicName, typeName, callback, Math.trunc(throttleRateMs))
             .then(subscription => {
                 if (this.unsubscribed) {
                     subscription.unsubscribe();
@@ -300,6 +305,34 @@ class VizantiBridge {
         return value;
     }
 
+    requireInt32(value, name) {
+        if (!Number.isInteger(value) || value < -2147483648 || value > 2147483647) {
+            throw new Error("Invalid int32 field: " + name);
+        }
+        return value;
+    }
+
+    requireUint32(value, name) {
+        if (!Number.isInteger(value) || value < 0 || value > 4294967295) {
+            throw new Error("Invalid uint32 field: " + name);
+        }
+        return value;
+    }
+
+    requireBoolean(value, name) {
+        if (typeof value !== "boolean") {
+            throw new Error("Invalid boolean field: " + name);
+        }
+        return value;
+    }
+
+    requireString(value, name) {
+        if (typeof value !== "string") {
+            throw new Error("Invalid string field: " + name);
+        }
+        return value;
+    }
+
     encodedStringSize(value) {
         const bytes = new TextEncoder().encode(value);
         return 4 + this.cdrAlign(bytes.length + 1, 4);
@@ -380,12 +413,79 @@ class VizantiBridge {
         return raw;
     }
 
+    encodeBool(message) {
+        if (!message || !Object.prototype.hasOwnProperty.call(message, "data")) {
+            throw new Error("Invalid Bool message");
+        }
+
+        const raw = new Uint8Array(5);
+        raw[0] = 0;
+        raw[1] = 1;
+        raw[2] = 0;
+        raw[3] = 0;
+        raw[4] = this.requireBoolean(message.data, "data") ? 1 : 0;
+        return raw;
+    }
+
+    encodePoseArray(message) {
+        if (!message || !message.header || !message.header.stamp || !Array.isArray(message.poses)) {
+            throw new Error("Invalid PoseArray message");
+        }
+
+        const stamp = message.header.stamp;
+        const frameId = this.requireString(message.header.frame_id, "header.frame_id");
+        const poses = message.poses;
+
+        let offset = 0;
+        offset += 4;
+        offset += 4;
+        offset = this.cdrAlign(offset, 4);
+        offset += this.encodedStringSize(frameId);
+        offset = this.cdrAlign(offset, 4);
+        offset += 4;
+
+        for (const pose of poses) {
+            offset = this.cdrAlign(offset, 8);
+            offset += 56;
+        }
+
+        const raw = new Uint8Array(4 + offset);
+        const view = new DataView(raw.buffer);
+
+        raw[0] = 0;
+        raw[1] = 1;
+        raw[2] = 0;
+        raw[3] = 0;
+
+        offset = 0;
+        view.setInt32(4 + offset, this.requireInt32(stamp.sec, "header.stamp.sec"), true);
+        offset += 4;
+        view.setUint32(4 + offset, this.requireUint32(stamp.nanosec, "header.stamp.nanosec"), true);
+        offset += 4;
+        offset = this.writeString(raw, view, offset, frameId);
+        offset = this.cdrAlign(offset, 4);
+        view.setUint32(4 + offset, this.requireUint32(poses.length, "poses.length"), true);
+        offset += 4;
+
+        for (const pose of poses) {
+            offset = this.writePoseAt(raw, view, offset, pose);
+        }
+
+        return raw;
+    }
+
     encodeMessage(typeName, message) {
         if (typeName === "geometry_msgs/msg/Twist") {
             return this.encodeTwist(message);
         }
         if (typeName === "geometry_msgs/msg/PoseStamped") {
             return this.encodePoseStamped(message);
+        }
+        if (typeName === "std_msgs/msg/Bool") {
+            return this.encodeBool(message);
+        }
+        if (typeName === "geometry_msgs/msg/PoseArray") {
+            return this.encodePoseArray(message);
         }
         throw new Error("Publish type not supported: " + typeName);
     }
@@ -467,6 +567,29 @@ class VizantiBridge {
         offset += 2;
         payload.set(typeBytes, offset);
         return payload;
+    }
+
+    encodeSubscribePayload(topicName, typeName, throttleRateMs) {
+        const basePayload = this.encodeTopicType(topicName, typeName);
+        const payload = new Uint8Array(basePayload.byteLength + 4);
+        const view = new DataView(payload.buffer);
+        payload.set(basePayload, 0);
+        view.setUint32(basePayload.byteLength, throttleRateMs, false);
+        return payload;
+    }
+
+    sendUnsubscribe(topicName, typeName) {
+        if (!this.socket || this.socket.readyState !== WebSocket.OPEN) {
+            return;
+        }
+        const payload = this.encodeTopicType(topicName, typeName);
+        const frame = new Uint8Array(9 + payload.length);
+        const view = new DataView(frame.buffer);
+        view.setUint8(0, OP_UNSUBSCRIBE);
+        view.setUint32(1, 0, false);
+        view.setUint32(5, payload.length, false);
+        frame.set(payload, 9);
+        this.socket.send(frame);
     }
 
 
@@ -731,7 +854,7 @@ class VizantiBridge {
         return [];
     }
 
-    async subscribe(topicName, rootMessageName, callback) {
+    async subscribe(topicName, rootMessageName, callback, throttleRateMs) {
         const all = await this.get_all_topics();
         let typeName = "";
         for (let index = 0; index < all.topics.length; index++) {
@@ -746,10 +869,13 @@ class VizantiBridge {
         this.topic_callbacks.set(topicName, callback);
         await this.request(
             OP_SUBSCRIBE,
-            this.encodeTopicType(topicName, typeName)
+            this.encodeSubscribePayload(topicName, typeName, throttleRateMs)
         );
         return {
-            unsubscribe: () => this.topic_callbacks.delete(topicName)
+            unsubscribe: () => {
+                this.topic_callbacks.delete(topicName);
+                this.sendUnsubscribe(topicName, typeName);
+            }
         };
     }
 

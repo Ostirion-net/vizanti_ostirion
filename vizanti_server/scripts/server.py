@@ -6,6 +6,7 @@ import hashlib
 import socket
 import struct
 import threading
+import time
 import logging
 import json
 import rclpy
@@ -204,6 +205,7 @@ class VizantiSocketThread(threading.Thread):
 	OP_MESSAGE = 4
 	OP_SUBSCRIBE_ACK = 5
 	OP_PUBLISH = 6
+	OP_UNSUBSCRIBE = 7
 
 	def __init__(self, host, port, node, qos_depth):
 		threading.Thread.__init__(self)
@@ -216,8 +218,11 @@ class VizantiSocketThread(threading.Thread):
 		self.sock = None
 		self.lock = threading.Lock()
 		self.client_topics = {}
+		self.client_topic_throttles = {}
 		self.subscriptions = {}
+		self.subscription_types = {}
 		self.publishers = {}
+		self.last_client_topic_send = {}
 
 	def run(self):
 		self.sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
@@ -232,6 +237,7 @@ class VizantiSocketThread(threading.Thread):
 				client, _ = self.sock.accept()
 				with self.lock:
 					self.client_topics[client] = set()
+					self.client_topic_throttles[client] = {}
 				threading.Thread(
 					target=self.handle_client,
 					args=(client,),
@@ -256,8 +262,7 @@ class VizantiSocketThread(threading.Thread):
 		except OSError:
 			pass
 		finally:
-			with self.lock:
-				self.client_topics.pop(client, None)
+			self.remove_client(client)
 			client.close()
 
 	def handle_payload(self, client, payload):
@@ -270,14 +275,17 @@ class VizantiSocketThread(threading.Thread):
 		if op == self.OP_GET_TOPICS:
 			self.send_topic_list(client, request_id)
 		if op == self.OP_SUBSCRIBE:
-			topic, type_name = self.parse_topic_type(body)
-			self.add_client_topic(client, topic)
+			topic, type_name, throttle_rate_ms = self.parse_subscribe_payload(body)
+			self.add_client_topic(client, topic, throttle_rate_ms)
 			self.ensure_subscription(topic, type_name)
 			header = struct.pack(">BII", self.OP_SUBSCRIBE_ACK, request_id, 0)
 			self.send_ws_frame(client, header)
 		if op == self.OP_PUBLISH:
 			topic, type_name, raw = self.parse_publish_payload(body)
 			self.publish_raw(topic, type_name, raw)
+		if op == self.OP_UNSUBSCRIBE:
+			topic, _ = self.parse_topic_type(body)
+			self.remove_client_topic(client, topic)
 
 	def parse_topic_type(self, body):
 		offset = 0
@@ -289,6 +297,16 @@ class VizantiSocketThread(threading.Thread):
 		offset += 2
 		type_name = body[offset:offset + type_len].decode("utf-8")
 		return topic, type_name
+
+	def parse_subscribe_payload(self, body):
+		topic, type_name = self.parse_topic_type(body)
+		offset = 4 + len(topic.encode("utf-8")) + len(type_name.encode("utf-8"))
+		if len(body) == offset:
+			return topic, type_name, 0
+		if len(body) != offset + 4:
+			raise ValueError("subscribe payload size mismatch")
+		throttle_rate_ms = struct.unpack(">I", body[offset:offset + 4])[0]
+		return topic, type_name, throttle_rate_ms
 
 	def parse_publish_payload(self, body):
 		offset = 0
@@ -331,10 +349,45 @@ class VizantiSocketThread(threading.Thread):
 		pub = self.ensure_publisher(topic, type_name)
 		pub.publish(msg)
 
-	def add_client_topic(self, client, topic):
+	def add_client_topic(self, client, topic, throttle_rate_ms):
 		with self.lock:
 			if client in self.client_topics:
 				self.client_topics[client].add(topic)
+				self.client_topic_throttles[client][topic] = throttle_rate_ms
+
+	def remove_client_topic(self, client, topic):
+		with self.lock:
+			topics = self.client_topics.get(client)
+			if topics is not None:
+				topics.discard(topic)
+			throttles = self.client_topic_throttles.get(client)
+			if throttles is not None:
+				throttles.pop(topic, None)
+			self.last_client_topic_send.pop((client, topic), None)
+		self.destroy_subscription_if_unused(topic)
+
+	def remove_client(self, client):
+		with self.lock:
+			topics = self.client_topics.pop(client, set())
+			self.client_topic_throttles.pop(client, None)
+			dead_keys = [key for key in self.last_client_topic_send if key[0] is client]
+			for key in dead_keys:
+				self.last_client_topic_send.pop(key, None)
+		for topic in topics:
+			self.destroy_subscription_if_unused(topic)
+
+	def destroy_subscription_if_unused(self, topic):
+		with self.lock:
+			for topics in self.client_topics.values():
+				if topic in topics:
+					return
+			sub = self.subscriptions.pop(topic, None)
+			self.subscription_types.pop(topic, None)
+		if sub is not None:
+			self.node.destroy_subscription(sub)
+			self.node.get_logger().info(
+				f"Vizanti raw subscription inactive: {topic}"
+			)
 
 	def ensure_subscription(self, topic, type_name):
 		with self.lock:
@@ -354,38 +407,55 @@ class VizantiSocketThread(threading.Thread):
 		)
 		with self.lock:
 			self.subscriptions[topic] = sub
+			self.subscription_types[topic] = type_name
 		self.node.get_logger().info(
 			f"Vizanti raw subscription active: {topic}"
 		)
 
 	def forward_raw(self, topic, type_name, raw):
-		topic_bytes = topic.encode("utf-8")
-		type_bytes = type_name.encode("utf-8")
-		body = b"".join([
-			struct.pack(">H", len(topic_bytes)),
-			topic_bytes,
-			struct.pack(">H", len(type_bytes)),
-			type_bytes,
-			struct.pack(">I", len(raw)),
-			raw
-		])
-		header = struct.pack(">BII", self.OP_MESSAGE, 0, len(body))
-		frame = header + body
+		now = time.monotonic()
 		dead = []
+		frame = None
 		with self.lock:
-			clients = list(self.client_topics.items())
-		for client, topics in clients:
-			if topic not in topics:
+			clients = [
+				(client, self.client_topic_throttles.get(client, {}).get(topic, 0))
+				for client, topics in self.client_topics.items()
+				if topic in topics
+			]
+		for client, throttle_rate_ms in clients:
+			if not self.client_topic_due(client, topic, throttle_rate_ms, now):
 				continue
+			if frame is None:
+				topic_bytes = topic.encode("utf-8")
+				type_bytes = type_name.encode("utf-8")
+				body = b"".join([
+					struct.pack(">H", len(topic_bytes)),
+					topic_bytes,
+					struct.pack(">H", len(type_bytes)),
+					type_bytes,
+					struct.pack(">I", len(raw)),
+					raw
+				])
+				header = struct.pack(">BII", self.OP_MESSAGE, 0, len(body))
+				frame = header + body
 			try:
 				self.send_ws_frame(client, frame)
 			except OSError:
 				dead.append(client)
-		if not dead:
-			return
+		for client in dead:
+			self.remove_client(client)
+
+	def client_topic_due(self, client, topic, throttle_rate_ms, now):
+		if throttle_rate_ms <= 0:
+			return True
+		key = (client, topic)
 		with self.lock:
-			for client in dead:
-				self.client_topics.pop(client, None)
+			last_send = self.last_client_topic_send.get(key)
+			if last_send is not None:
+				if (now - last_send) * 1000.0 < throttle_rate_ms:
+					return False
+			self.last_client_topic_send[key] = now
+		return True
 
 	def send_topic_list(self, client, request_id):
 		parts = []
